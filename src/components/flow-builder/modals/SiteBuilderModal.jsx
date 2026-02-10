@@ -32,6 +32,7 @@ const SiteBuilderModal = ({ isOpen, onClose, projectId, flowId, nodeId }) => {
   const [isModulesCollapsed, setIsModulesCollapsed] = useState(false);
   const [flowContext, setFlowContext] = useState(null);
   const [activeView, setActiveView] = useState('modules'); // For mobile
+  const [isBuilding, setIsBuilding] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -233,11 +234,9 @@ const SiteBuilderModal = ({ isOpen, onClose, projectId, flowId, nodeId }) => {
         <ResizableHandle withHandle />
         <ResizablePanel defaultSize={35} minSize={25}>
           <ChatPanel
-            project={project}
-            activeModule={activeModule}
             pageStructure={pageStructure}
             setPageStructure={setPageStructure}
-            updateProjectInDb={updateProjectInDb}
+            setIsBuilding={setIsBuilding}
             flowContext={flowContext}
           />
         </ResizablePanel>
@@ -248,8 +247,8 @@ const SiteBuilderModal = ({ isOpen, onClose, projectId, flowId, nodeId }) => {
             setPageStructure={setPageStructure}
             selectedElement={selectedElement}
             setSelectedElement={setSelectedElement}
-            updateProjectInDb={updateProjectInDb}
             onOpenImageBank={() => setIsImageBankOpen(true)}
+            isBuilding={isBuilding}
           />
         </ResizablePanel>
       </ResizablePanelGroup>
@@ -273,8 +272,8 @@ const SiteBuilderModal = ({ isOpen, onClose, projectId, flowId, nodeId }) => {
               </SortableContext>
             </DndContext>
           );
-        case 'chat': return <ChatPanel {...commonProps} flowContext={flowContext} />;
-        case 'preview': return <PreviewPanel {...commonProps} />;
+        case 'chat': return <ChatPanel pageStructure={pageStructure} setPageStructure={setPageStructure} setIsBuilding={setIsBuilding} flowContext={flowContext} />;
+        case 'preview': return <PreviewPanel pageStructure={pageStructure} setPageStructure={setPageStructure} selectedElement={selectedElement} setSelectedElement={setSelectedElement} onOpenImageBank={() => setIsImageBankOpen(true)} isBuilding={isBuilding} />;
         default: return null;
       }
     };

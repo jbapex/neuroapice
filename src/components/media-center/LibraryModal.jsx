@@ -62,7 +62,14 @@ const LibraryModal = ({ isOpen, onOpenChange, onSelect }) => {
                     className="flex items-center gap-4 p-4 cursor-pointer hover:bg-muted/50"
                     onClick={() => onSelect(item)}
                   >
-                    <img-replace src={item.thumbnail_url} alt={item.title} className="w-24 h-16 object-cover rounded-md" />
+                    <img 
+                      src={item.thumbnail_url} 
+                      alt={item.title} 
+                      className="w-24 h-16 object-cover rounded-md"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                      }}
+                    />
                     <div className="flex-1">
                       <p className="font-semibold line-clamp-2">{item.title}</p>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">

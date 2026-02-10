@@ -198,8 +198,8 @@ const Clients = () => {
       />
 
       <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen} onClose={handleCloseDrawer}>
-        <DrawerContent>
-            <div className="mx-auto w-full max-w-3xl h-[90vh] flex flex-col">
+        <DrawerContent className="!h-[90vh] !max-h-[90vh]">
+            <div className="mx-auto w-full max-w-7xl h-full flex flex-col overflow-hidden min-h-0">
               {renderDrawerContent()}
             </div>
         </DrawerContent>

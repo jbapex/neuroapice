@@ -77,7 +77,14 @@ const LibraryList = ({ library, loading, transcribingId, onTranscribe, onDelete 
               ) : library.length > 0 ? (
                 library.map((item) => (
                   <Card key={item.id} className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4">
-                    <img-replace src={item.thumbnail_url} alt={item.title} className="w-full sm:w-32 h-auto sm:h-20 object-cover rounded-md" />
+                    <img 
+                      src={item.thumbnail_url} 
+                      alt={item.title} 
+                      className="w-full sm:w-32 h-auto sm:h-20 object-cover rounded-md"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                      }}
+                    />
                     <div className="flex-1 space-y-1">
                       <p className="font-semibold line-clamp-2">{item.title}</p>
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">

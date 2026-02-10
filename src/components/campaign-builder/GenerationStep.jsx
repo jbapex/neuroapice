@@ -5,15 +5,17 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, Bot, Wand2, Sparkles, Facebook, CheckCircle, ChevronLeft, Star, Clipboard, Check, Edit, Save, X, Trash2, Lock } from 'lucide-react';
+import { Loader2, Bot, Wand2, Sparkles, Facebook, CheckCircle, ChevronLeft, Star, Clipboard, Check, Edit, Save, X, Trash2, Lock, ChevronsUpDown, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Textarea } from '@/components/ui/textarea';
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 const GenerationStep = ({ campaignData, updateExecutionCount }) => {
   const { toast } = useToast();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const [allAgents, setAllAgents] = useState({});
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -24,6 +26,9 @@ const GenerationStep = ({ campaignData, updateExecutionCount }) => {
   const [copiedId, setCopiedId] = useState(null);
   const [editingItemId, setEditingItemId] = useState(null);
   const [editText, setEditText] = useState('');
+  const [llmIntegrations, setLlmIntegrations] = useState([]);
+  const [selectedLlmId, setSelectedLlmId] = useState(null);
+  const [isAiSelectorOpen, setIsAiSelectorOpen] = useState(false);
 
   const fetchAgents = useCallback(async () => {
     setLoading(true);
@@ -109,10 +114,56 @@ const GenerationStep = ({ campaignData, updateExecutionCount }) => {
     }
   }, [campaignData.id, toast]);
 
+  // Buscar integrações de IA (prioriza Minha IA)
+  const fetchIntegrations = useCallback(async () => {
+    if (!user) return;
+    try {
+      // Conexões pessoais ativas com text_generation
+      let personal = [];
+      const { data: userData, error: userError } = await supabase
+        .from('user_ai_connections')
+        .select('id, name, provider, default_model, capabilities, is_active')
+        .eq('user_id', user.id)
+        .eq('is_active', true);
+
+      if (!userError && userData) {
+        personal = userData
+          .filter(c => c.capabilities?.text_generation === true)
+          .map(c => ({ ...c, is_user_connection: true, source: 'personal' }));
+      }
+
+      // Integrações globais apenas se não houver pessoais
+      let global = [];
+      if (personal.length === 0) {
+        const { data: globalData, error: globalError } = await supabase
+          .from('llm_integrations')
+          .select('id, name, provider, default_model, is_active');
+        if (!globalError && globalData) {
+          global = globalData
+            .filter(i => i.is_active !== false)
+            .map(i => ({ ...i, is_user_connection: false, source: 'global' }));
+        }
+      }
+
+      const all = [...personal, ...global];
+      setLlmIntegrations(all);
+      if (all.length > 0 && !selectedLlmId) {
+        setSelectedLlmId(all[0].id);
+      }
+      if (all.length === 0) {
+        toast({ title: 'Nenhuma IA configurada', description: 'Configure sua IA em Minha IA para gerar conteúdo.', variant: 'destructive' });
+      }
+    } catch (err) {
+      console.error('Erro ao carregar IAs:', err);
+      toast({ title: 'Erro ao carregar IAs', description: 'Não foi possível carregar as conexões de IA.', variant: 'destructive' });
+    }
+  }, [user, selectedLlmId, toast]);
+
   useEffect(() => {
     fetchAgents();
     fetchOutputs();
-  }, [fetchAgents, fetchOutputs]);
+    fetchIntegrations();
+  }, [fetchAgents, fetchOutputs, fetchIntegrations]);
   
   const handleSelectAgent = (agent) => {
     setSelectedAgent(agent);
@@ -123,27 +174,151 @@ const GenerationStep = ({ campaignData, updateExecutionCount }) => {
         toast({ title: "Aguarde", description: "Por favor, salve a campanha antes de gerar.", variant: "destructive" });
         return;
     }
+    if (!selectedLlmId) {
+        toast({ title: "Selecione uma IA", description: "Por favor, selecione uma conexão de IA para gerar conteúdo.", variant: "destructive" });
+        return;
+    }
     setGenerating(true);
     
-    const { clients, ...payload } = campaignData;
-    let functionName = '';
-    let baseBody = {};
+    const clients = campaignData?.clients;
+    const payload = campaignData; // enviar campanha completa (inclui clients)
     const agentIdRaw = agent.id.toString().replace('module-', '');
-
-    if (agent.type === 'ads_agent') {
-        functionName = 'generate-ads-content';
-        baseBody = { ads_agent_id: agentIdRaw, campaign_data: payload };
-    } else {
-        functionName = 'generate-content';
-        baseBody = { module_id: agentIdRaw, campaign_data: payload };
+    const selectedIntegration = llmIntegrations.find(i => i.id === selectedLlmId);
+    if (!selectedIntegration) {
+      toast({ title: "Erro", description: "Conexão de IA selecionada não encontrada.", variant: "destructive" });
+      setGenerating(false);
+      return;
     }
 
     try {
-      const result = await supabase.functions.invoke(functionName, { body: JSON.stringify(baseBody) });
+      let result;
+      if (agent.type === 'ads_agent') {
+        // Para ads_agent, usar generate-ads-content com parâmetros de IA
+        const { data: adsData, error: adsError } = await supabase.functions.invoke('generate-ads-content', {
+          body: JSON.stringify({
+            ads_agent_id: agentIdRaw,
+            campaign_data: payload,
+            user_text: 'Gere uma variação de conteúdo para este agente com base no briefing e contexto da campanha.',
+          }),
+        });
+        
+        if (adsError) {
+          let errorMsg = adsError.message || 'Ocorreu um erro ao gerar conteúdo de anúncio.';
+          const context = adsError.context || {};
+          if (context.error) {
+            errorMsg = context.error;
+          } else {
+            try {
+              const errorJson = await new Response(context).json();
+              errorMsg = errorJson.error || errorMsg;
+            } catch (e) {
+              // Se não conseguir parsear, usar a mensagem padrão
+            }
+          }
+          throw new Error(errorMsg);
+        }
+        
+        if (!adsData || !adsData.generatedText) {
+          throw new Error('A função de geração não retornou conteúdo válido.');
+        }
+        
+        result = { data: { generatedText: adsData.generatedText, outputId: adsData.outputId } };
+      } else {
+        // Para módulos, tentar generic-ai-chat primeiro, depois fallback para generate-content
+        try {
+          // Construir prompt com contexto do módulo e campanha
+          const modulePrompt = agent.prompt || agent.description || '';
+          const campaignContext = `Campanha: ${payload.name || 'Sem nome'}\nCliente: ${clients?.name || 'N/A'}\nBriefing: ${payload.description || 'N/A'}`;
+          const fullPrompt = `${modulePrompt}\n\n${campaignContext}`;
+          
+          const { data: chatData, error: chatError } = await supabase.functions.invoke('generic-ai-chat', {
+            body: JSON.stringify({
+              session_id: null, // Não salvar sessão - conteúdo de campanha não deve aparecer no Chat IA
+              messages: [
+                { role: 'system', content: fullPrompt },
+                { role: 'user', content: 'Gere o conteúdo solicitado para esta campanha.' }
+              ],
+              llm_integration_id: selectedLlmId,
+              is_user_connection: selectedIntegration.is_user_connection,
+              context: 'campaign_generation', // Identificar contexto
+            }),
+          });
+
+          if (chatError) {
+            let errorMsg = chatError.message || 'Ocorreu um erro ao chamar a IA.';
+            const context = chatError.context || {};
+            if (context.error) {
+              errorMsg = context.error;
+            } else {
+              try {
+                const errorJson = await new Response(context).json();
+                errorMsg = errorJson.error || errorMsg;
+              } catch (e) {
+                // Se não conseguir parsear, usar a mensagem padrão
+              }
+            }
+            throw new Error(errorMsg);
+          }
+          
+          if (!chatData || (!chatData.response && !chatData.content)) {
+            throw new Error('A IA não retornou conteúdo válido.');
+          }
+          
+          // Salvar resultado em agent_outputs
+          const generatedText = chatData.response || chatData.content || 'Conteúdo gerado com sucesso!';
+          const { data: outputData, error: outputError } = await supabase
+            .from('agent_outputs')
+            .insert({
+              module_id: agentIdRaw,
+              campaign_id: campaignData.id,
+              generated_text: generatedText,
+              is_favorited: false,
+            })
+            .select('id')
+            .single();
+
+          if (outputError) throw outputError;
+
+          result = { data: { generatedText, outputId: outputData.id } };
+        } catch (genericError) {
+          console.warn('generic-ai-chat failed, trying generate-content:', genericError);
+          // Fallback para generate-content (comportamento antigo)
+          const { data: fallbackData, error: fallbackError } = await supabase.functions.invoke('generate-content', {
+            body: JSON.stringify({
+              module_id: agentIdRaw,
+              campaign_data: payload,
+              client_id: clients?.id || null,
+              user_text: 'Gere o conteúdo solicitado para esta campanha com base no briefing e contexto.',
+            }),
+          });
+          
+          if (fallbackError) {
+            let errorMsg = fallbackError.message || 'Ocorreu um erro ao gerar conteúdo.';
+            const context = fallbackError.context || {};
+            if (context.error) {
+              errorMsg = context.error;
+            } else {
+              try {
+                const errorJson = await new Response(context).json();
+                errorMsg = errorJson.error || errorMsg;
+              } catch (e) {
+                // Se não conseguir parsear, usar a mensagem padrão
+              }
+            }
+            throw new Error(errorMsg);
+          }
+          
+          if (!fallbackData || !fallbackData.generatedText) {
+            throw new Error('A função de geração não retornou conteúdo válido.');
+          }
+          
+          result = { data: { generatedText: fallbackData.generatedText, outputId: fallbackData.outputId } };
+        }
+      }
       
-      if (result.error) {
-        const errorContext = result.error.context ? (typeof result.error.context === 'string' ? JSON.parse(result.error.context) : result.error.context) : { error: result.error.message };
-        throw new Error(errorContext.error || 'Ocorreu um erro desconhecido.');
+      // Verificação final de segurança (erros já foram tratados acima)
+      if (!result || !result.data) {
+        throw new Error('Nenhum resultado foi retornado da geração.');
       }
 
       toast({
@@ -228,10 +403,44 @@ const GenerationStep = ({ campaignData, updateExecutionCount }) => {
         </Button>
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center">
-              <AgentIcon agent={selectedAgent} />
-              {selectedAgent.name}
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center">
+                <AgentIcon agent={selectedAgent} />
+                {selectedAgent.name}
+              </CardTitle>
+              {/* Seletor de IA */}
+              <Popover open={isAiSelectorOpen} onOpenChange={setIsAiSelectorOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="h-8 text-xs">
+                    <Settings className="w-3 h-3 mr-1" />
+                    {selectedLlmId ? (llmIntegrations.find(i => i.id === selectedLlmId)?.name || 'Selecione a IA') : 'Selecione a IA'}
+                    <ChevronsUpDown className="ml-2 h-3 w-3 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0">
+                  <Command>
+                    <CommandInput placeholder="Procurar conexão..." />
+                    <CommandList>
+                      <CommandEmpty>Nenhuma IA encontrada</CommandEmpty>
+                      <CommandGroup>
+                        {llmIntegrations.map(integration => (
+                          <CommandItem key={integration.id} value={integration.name} onSelect={() => {
+                            setSelectedLlmId(integration.id);
+                            setIsAiSelectorOpen(false);
+                          }}>
+                            <div className="flex items-center gap-2">
+                              <div className={`w-2 h-2 rounded-full ${integration.is_user_connection ? 'bg-green-500' : 'bg-blue-500'}`} />
+                              <span>{integration.name}</span>
+                              <span className="text-xs text-muted-foreground">({integration.is_user_connection ? 'Pessoal' : 'Global'})</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <Accordion type="multiple" className="w-full space-y-4">
@@ -281,7 +490,7 @@ const GenerationStep = ({ campaignData, updateExecutionCount }) => {
             )}
           </CardContent>
           <CardFooter>
-            <Button className="w-full" onClick={() => handleGenerate(selectedAgent)} disabled={generating}>
+            <Button className="w-full" onClick={() => handleGenerate(selectedAgent)} disabled={generating || !selectedLlmId}>
               {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
               Gerar Nova Variação
             </Button>

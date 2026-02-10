@@ -35,6 +35,12 @@ const ModuleChat = () => {
   const [selectedPreviousOutput, setSelectedPreviousOutput] = useState(null);
   const [isViewContentDialogOpen, setIsViewContentDialogOpen] = useState(false);
   const [contentToView, setContentToView] = useState('');
+  // IA: conexões do usuário (Minha IA)
+  const [userLlmConnections, setUserLlmConnections] = useState([]);
+  // IA: integração global do módulo (detalhes)
+  const [moduleGlobalIa, setModuleGlobalIa] = useState(null);
+  // IA: seleção explícita pelo usuário na tela
+  const [selectedIaKey, setSelectedIaKey] = useState(''); // formato: user:<id> | global:<id>
 
   const fetchModuleDetails = useCallback(async () => {
     if (!moduleId || isNaN(parseInt(moduleId))) return;
@@ -120,6 +126,37 @@ const ModuleChat = () => {
     }
   }, [authLoading, profile, fetchModuleDetails]);
   
+  // Buscar IA pessoais do usuário (text_generation ativas)
+  useEffect(() => {
+    const fetchUserIas = async () => {
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('user_ai_connections')
+        .select('id, name, capabilities, is_active')
+        .eq('user_id', user.id)
+        .eq('is_active', true);
+      if (!error && data) {
+        const textGen = data.filter(c => c.capabilities?.text_generation === true);
+        setUserLlmConnections(textGen);
+      }
+    };
+    fetchUserIas();
+  }, [user]);
+
+  // Buscar detalhes da IA global do módulo (nome/modelo) quando houver id
+  useEffect(() => {
+    const fetchModuleIa = async () => {
+      if (!module?.llm_integration_id) { setModuleGlobalIa(null); return; }
+      const { data, error } = await supabase
+        .from('llm_integrations')
+        .select('id, name, default_model')
+        .eq('id', module.llm_integration_id)
+        .single();
+      if (!error) setModuleGlobalIa(data);
+    };
+    fetchModuleIa();
+  }, [module?.llm_integration_id]);
+  
   useEffect(() => {
     if (module?.config?.use_client) fetchClients();
     if (module?.config?.use_campaign) fetchCampaigns();
@@ -168,7 +205,8 @@ const ModuleChat = () => {
     if (isLoading) return true;
     const { use_client, use_campaign } = module?.config || {};
     if (use_client && use_campaign) {
-        return !selectedClient && !selectedCampaign;
+        // Quando ambos são exigidos, ambos devem estar preenchidos
+        return !selectedClient || !selectedCampaign;
     }
     if (use_client && !selectedClient) return true;
     if (use_campaign && !selectedCampaign) return true;
@@ -199,21 +237,116 @@ const ModuleChat = () => {
     }
 
     try {
-        const { data, error } = await supabase.functions.invoke('generate-content', {
-            body: JSON.stringify({
-                module_id: moduleId,
-                client_id: selectedClient?.id || null,
-                campaign_data: selectedCampaign,
-                user_text: finalUserText,
-            }),
-        });
-        if (error) {
-            const errorBody = await error.context.json();
-            throw new Error(errorBody.error);
+        // Seleção de IA: prioriza Minha IA (ativa para text_generation). Fallback: IA global do módulo
+        const activeUserIa = userLlmConnections.find(c => c.is_active) || userLlmConnections[0];
+        const preferUserAi = module?.config?.prefer_user_ai === true;
+        let isUserConnection = false;
+        let llmIntegrationId = null;
+
+        // 1) Se o usuário escolheu explicitamente uma IA no seletor, respeitar
+        if (selectedIaKey) {
+          const [kind, rawId] = selectedIaKey.split(':');
+          isUserConnection = kind === 'user';
+          llmIntegrationId = parseInt(rawId);
+        } else {
+          // 2) Caso contrário, aplicar a prioridade configurada
+          if (preferUserAi) {
+            if (activeUserIa) {
+              isUserConnection = true;
+              llmIntegrationId = activeUserIa.id;
+            } else {
+              llmIntegrationId = module?.llm_integration_id || null;
+            }
+          } else {
+            if (module?.llm_integration_id) {
+              llmIntegrationId = module.llm_integration_id;
+            } else if (activeUserIa) {
+              isUserConnection = true;
+              llmIntegrationId = activeUserIa.id;
+            }
+          }
         }
-        setGeneratedContent(data.generatedText);
-        setLastOutput({ id: data.outputId, is_favorited: false });
-        toast({ title: `Conteúdo ${isRefining ? 'refinado' : 'gerado'} com sucesso!` });
+
+        if (!llmIntegrationId) {
+          setIsLoading(false);
+          toast({ title: 'Nenhuma IA configurada', description: 'Configure uma IA em Minha IA ou defina uma IA para o módulo.', variant: 'destructive' });
+          return;
+        }
+
+        let generatedText = '';
+        let outputId = null;
+
+        // Se temos uma IA determinada (seletor ou prioridade), tentar generic-ai-chat primeiro
+        if (llmIntegrationId) {
+          try {
+            const contextLines = [];
+            if (module?.name) contextLines.push(`Módulo: ${module.name}`);
+            if (selectedClient?.name) contextLines.push(`Cliente: ${selectedClient.name}`);
+            if (selectedCampaign?.name) contextLines.push(`Campanha: ${selectedCampaign.name}`);
+            const contextHeader = contextLines.length ? `[CONTEXTO]\n${contextLines.join('\n')}\n\n` : '';
+
+            const messages = [];
+            if (module?.base_prompt) {
+              messages.push({ role: 'system', content: module.base_prompt });
+            }
+            messages.push({ role: 'user', content: `${contextHeader}${finalUserText || 'Gerar conteúdo para o módulo selecionado.'}` });
+
+            const { data: chatData, error: chatError } = await supabase.functions.invoke('generic-ai-chat', {
+              body: JSON.stringify({
+                session_id: null, // Não salvar sessão - conteúdo de módulos não deve aparecer no Chat IA
+                messages,
+                llm_integration_id: llmIntegrationId,
+                is_user_connection: isUserConnection,
+                context: 'module_generation', // Identificar contexto
+              })
+            });
+
+            if (chatError) throw chatError;
+            generatedText = chatData?.response || '';
+
+            // Persistir saída para manter histórico, se possível
+            if (generatedText) {
+              const { data: insertData, error: insertError } = await supabase
+                .from('agent_outputs')
+                .insert([{
+                  user_id: user.id,
+                  module_id: parseInt(moduleId),
+                  campaign_id: selectedCampaign?.id || null,
+                  generated_text: generatedText,
+                  is_favorited: false,
+                }])
+                .select('id')
+                .single();
+              if (!insertError) outputId = insertData.id;
+            }
+
+            setGeneratedContent(generatedText);
+            setLastOutput({ id: outputId, is_favorited: false });
+            toast({ title: `Conteúdo ${isRefining ? 'refinado' : 'gerado'} com sucesso!` });
+            return;
+          } catch (primaryErr) {
+            // Falhou no generic-ai-chat (ex.: função não disponível): cair para generate-content
+          }
+        }
+
+        // Fallback: usar função generate-content (comportamento antigo)
+        {
+          const { data, error } = await supabase.functions.invoke('generate-content', {
+              body: JSON.stringify({
+                  module_id: moduleId,
+                  client_id: selectedClient?.id || null,
+                  campaign_data: selectedCampaign,
+                  user_text: finalUserText,
+              }),
+          });
+          if (error) {
+              const errorBody = await (error.context?.json ? error.context.json() : Promise.resolve({ error: error.message }));
+              throw new Error(errorBody.error || error.message);
+          }
+          setGeneratedContent(data.generatedText);
+          setLastOutput({ id: data.outputId, is_favorited: false });
+          toast({ title: `Conteúdo ${isRefining ? 'refinado' : 'gerado'} com sucesso!` });
+        }
     } catch (error) {
         setGeneratedContent(`Ocorreu um erro ao gerar o conteúdo: ${error.message}`);
         toast({ title: "Erro na Geração", description: error.message, variant: "destructive" });
@@ -279,6 +412,21 @@ const ModuleChat = () => {
             </CardHeader>
             <CardContent>
               <form onSubmit={(e) => { e.preventDefault(); handleGenerateContent(); }} className="space-y-6">
+                {/* Seletor de IA (comportamento, sem alterar o layout geral) */}
+                <div className="space-y-2">
+                  <Label>Conexão de IA</Label>
+                  <Select value={selectedIaKey} onValueChange={setSelectedIaKey}>
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Selecione uma IA (opcional)..." /></SelectTrigger>
+                    <SelectContent>
+                      {userLlmConnections.length > 0 && userLlmConnections.map(conn => (
+                        <SelectItem key={`user-${conn.id}`} value={`user:${conn.id}`}>{conn.name} • Minha IA</SelectItem>
+                      ))}
+                      {moduleGlobalIa && (
+                        <SelectItem key={`global-${moduleGlobalIa.id}`} value={`global:${moduleGlobalIa.id}`}>{moduleGlobalIa.name} ({moduleGlobalIa.default_model}) • Global</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
                 {module.config?.use_client && <div className="space-y-2">
                   <Label htmlFor="client-select">Cliente</Label>
                   <Select onValueChange={handleSelectClient} value={selectedClient?.id?.toString() || ''} disabled={!clients.length}>

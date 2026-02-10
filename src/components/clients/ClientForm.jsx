@@ -9,9 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Bot } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DrawerHeader, DrawerTitle, DrawerDescription } from '@/components/ui/drawer';
+import { Badge } from '@/components/ui/badge';
+import ClientOnboardingAssistant from './ClientOnboardingAssistant';
+import { cn } from '@/lib/utils';
 
 const clientSchema = z.object({
   name: z.string().min(2, { message: "O nome do cliente deve ter pelo menos 2 caracteres." }),
@@ -33,11 +36,14 @@ const ClientForm = ({ client, onSave, onCancel }) => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [aiFilledFields, setAiFilledFields] = useState(new Set());
 
-  const { register, handleSubmit, formState: { errors }, reset } = useForm({
+  const { register, handleSubmit, formState: { errors }, reset, setValue, getValues, watch } = useForm({
     resolver: zodResolver(clientSchema),
     defaultValues: client || {},
   });
+
+  const formValues = watch();
 
   useEffect(() => {
     const defaultValues = {
@@ -57,6 +63,12 @@ const ClientForm = ({ client, onSave, onCancel }) => {
     };
     reset(client ? { ...defaultValues, ...client } : defaultValues);
   }, [client, reset]);
+
+  // Wrapper para setValue que marca campo como preenchido pela IA
+  const handleSetValue = (field, value, options = {}) => {
+    setValue(field, value, options);
+    setAiFilledFields(prev => new Set([...prev, field]));
+  };
 
   const onSubmit = async (data) => {
     if (!user) return;
@@ -80,101 +92,82 @@ const ClientForm = ({ client, onSave, onCancel }) => {
       toast({ title: 'Erro ao salvar cliente', description: error.message, variant: 'destructive' });
     } else {
       toast({ title: `Cliente ${client && client.id ? 'atualizado' : 'criado'}!`, description: 'Operação realizada com sucesso.' });
+      setAiFilledFields(new Set());
       onSave();
     }
   };
 
+  // Função helper para renderizar campo com badge IA
+  const renderField = (fieldName, label, inputType = 'input', placeholder = '', rows = undefined) => {
+    const isAiFilled = aiFilledFields.has(fieldName);
+    const hasValue = formValues[fieldName];
+    
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <Label htmlFor={fieldName} className={fieldName === 'name' ? 'font-bold text-lg' : ''}>
+            {label}
+          </Label>
+          {isAiFilled && hasValue && (
+            <Badge variant="secondary" className="text-xs">
+              <Bot className="w-3 h-3 mr-1" />
+              IA
+            </Badge>
+          )}
+        </div>
+        {inputType === 'input' ? (
+          <Input 
+            id={fieldName} 
+            {...register(fieldName)} 
+            placeholder={placeholder}
+            className={cn(isAiFilled && hasValue && 'border-primary/50')}
+          />
+        ) : (
+          <Textarea 
+            id={fieldName} 
+            {...register(fieldName)} 
+            placeholder={placeholder}
+            rows={rows}
+            className={cn(isAiFilled && hasValue && 'border-primary/50')}
+          />
+        )}
+        {errors[fieldName] && <p className="text-sm text-destructive">{errors[fieldName].message}</p>}
+      </div>
+    );
+  };
+
   return (
-    <div className="flex flex-col h-full">
-        <DrawerHeader>
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
+        <DrawerHeader className="flex-shrink-0 px-6 pt-4">
             <DrawerTitle>{client ? 'Editar Cliente' : 'Adicionar Novo Cliente'}</DrawerTitle>
             <DrawerDescription>
-                Preencha as informações abaixo para {client ? 'atualizar o' : 'criar um novo'} cliente.
+                {client ? 'Atualize as informações do cliente.' : 'Preencha as informações manualmente ou use o assistente de IA ao lado.'}
             </DrawerDescription>
         </DrawerHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-grow overflow-hidden px-4">
-            <ScrollArea className="flex-grow pr-4 -mr-4">
+        <div className="flex flex-1 overflow-hidden min-h-0 px-6 pb-4">
+          {/* Formulário à esquerda */}
+          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col flex-grow overflow-hidden pr-4 border-r w-[60%] min-h-0">
+            <ScrollArea className="flex-1 min-h-0 pr-4 -mr-4">
                 <div className="space-y-6 pb-6">
-                    <div className="space-y-1">
-                        <Label htmlFor="name" className="font-bold text-lg">Nome do Cliente</Label>
-                        <Input id="name" {...register('name')} placeholder="Ex: Empresa do Josias" />
-                        {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="creator_name">Seu nome ou nome do criador</Label>
-                        <Input id="creator_name" {...register('creator_name')} placeholder="Ex: Josias Bonfim" />
-                        {errors.creator_name && <p className="text-sm text-destructive">{errors.creator_name.message}</p>}
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="niche">Seu nicho</Label>
-                        <Input id="niche" {...register('niche')} placeholder="Ex: Marketing Digital" />
-                        {errors.niche && <p className="text-sm text-destructive">{errors.niche.message}</p>}
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="style_in_3_words">Defina seu estilo em 3 palavras</Label>
-                        <Input id="style_in_3_words" {...register('style_in_3_words')} placeholder="Ex: Divertido, direto, inspirador" />
-                        {errors.style_in_3_words && <p className="text-sm text-destructive">{errors.style_in_3_words.message}</p>}
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="product_to_promote">Você tem algum produto/serviço específico para promover? Qual?</Label>
-                        <Input id="product_to_promote" {...register('product_to_promote')} placeholder="Ex: Consultoria de Marketing" />
-                        {errors.product_to_promote && <p className="text-sm text-destructive">{errors.product_to_promote.message}</p>}
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="target_audience">Público-alvo principal</Label>
-                        <Textarea id="target_audience" {...register('target_audience')} placeholder="Ex: Mulheres de 18-35 anos interessadas em maquiagem acessível..." />
-                        {errors.target_audience && <p className="text-sm text-destructive">{errors.target_audience.message}</p>}
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="success_cases">Casos de sucesso</Label>
-                        <Textarea id="success_cases" {...register('success_cases')} placeholder="Quais são grandes feitos que você possui para o seu mercado, comente sobre sua experiência no nicho" />
-                        {errors.success_cases && <p className="text-sm text-destructive">{errors.success_cases.message}</p>}
-                    </div>
-
+                    {renderField('name', 'Nome do Cliente', 'input', 'Ex: Empresa do Josias')}
+                    {renderField('creator_name', 'Seu nome ou nome do criador', 'input', 'Ex: Josias Bonfim')}
+                    {renderField('niche', 'Seu nicho', 'input', 'Ex: Marketing Digital')}
+                    {renderField('style_in_3_words', 'Defina seu estilo em 3 palavras', 'input', 'Ex: Divertido, direto, inspirador')}
+                    {renderField('product_to_promote', 'Você tem algum produto/serviço específico para promover? Qual?', 'input', 'Ex: Consultoria de Marketing')}
+                    {renderField('target_audience', 'Público-alvo principal', 'textarea', 'Ex: Mulheres de 18-35 anos interessadas em maquiagem acessível...')}
+                    {renderField('success_cases', 'Casos de sucesso', 'textarea', 'Quais são grandes feitos que você possui para o seu mercado, comente sobre sua experiência no nicho')}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                        <Label htmlFor="profile_views">Total de visualizações do perfil</Label>
-                        <Input id="profile_views" {...register('profile_views')} placeholder="Ex: 100 Mil de views" />
-                        {errors.profile_views && <p className="text-sm text-destructive">{errors.profile_views.message}</p>}
-                        </div>
-                        <div className="space-y-1">
-                        <Label htmlFor="followers">Total de seguidores</Label>
-                        <Input id="followers" {...register('followers')} placeholder="Ex: 10k de seguidores" />
-                        {errors.followers && <p className="text-sm text-destructive">{errors.followers.message}</p>}
-                        </div>
+                        {renderField('profile_views', 'Total de visualizações do perfil', 'input', 'Ex: 100 Mil de views')}
+                        {renderField('followers', 'Total de seguidores', 'input', 'Ex: 10k de seguidores')}
                     </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="appearance_format">Formato de aparição</Label>
-                        <Input id="appearance_format" {...register('appearance_format')} placeholder="Ex: Apareço falando / voz em off / só texto e imagens" />
-                        {errors.appearance_format && <p className="text-sm text-destructive">{errors.appearance_format.message}</p>}
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="catchphrases">Bordões ou frases-chave que usa sempre</Label>
-                        <Input id="catchphrases" {...register('catchphrases')} placeholder="Ex: “Anota essa!”" />
-                        {errors.catchphrases && <p className="text-sm text-destructive">{errors.catchphrases.message}</p>}
-                    </div>
-                    
-                    <div className="space-y-1">
-                        <Label htmlFor="phone">Telefone (Opcional)</Label>
-                        <Input id="phone" {...register('phone')} placeholder="(11) 99999-9999" />
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="about">Sobre o Cliente (Opcional)</Label>
-                        <Textarea id="about" {...register('about')} placeholder="Descreva o que o cliente vende, um pouco sobre a empresa, etc." rows={3} />
-                    </div>
+                    {renderField('appearance_format', 'Formato de aparição', 'input', 'Ex: Apareço falando / voz em off / só texto e imagens')}
+                    {renderField('catchphrases', 'Bordões ou frases-chave que usa sempre', 'input', 'Ex: "Anota essa!"')}
+                    {renderField('phone', 'Telefone (Opcional)', 'input', '(11) 99999-9999')}
+                    {renderField('about', 'Sobre o Cliente (Opcional)', 'textarea', 'Descreva o que o cliente vende, um pouco sobre a empresa, etc.', 3)}
                 </div>
             </ScrollArea>
 
-            <div className="flex justify-end gap-2 pt-4 flex-shrink-0">
+            <div className="flex justify-end gap-2 pt-4 flex-shrink-0 border-t">
                 <Button type="button" variant="outline" onClick={onCancel}>
                 Cancelar
                 </Button>
@@ -183,7 +176,20 @@ const ClientForm = ({ client, onSave, onCancel }) => {
                 Salvar Alterações
                 </Button>
             </div>
-        </form>
+          </form>
+
+          {/* Chat com IA à direita */}
+          <div className="w-[40%] flex-shrink-0 min-h-0 overflow-hidden">
+            <ClientOnboardingAssistant
+              formState={formValues}
+              setValue={handleSetValue}
+              getValues={getValues}
+              watch={watch}
+              mode={client ? 'edit' : 'create'}
+              clientName={client?.name || null}
+            />
+          </div>
+        </div>
     </div>
   );
 };

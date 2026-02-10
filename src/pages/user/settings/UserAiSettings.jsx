@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, Trash2, Edit, KeyRound, Image as ImageIcon, Bot, ToggleLeft, ToggleRight, Construction } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Trash2, Edit, KeyRound, Image as ImageIcon, Bot, ToggleLeft, ToggleRight, Construction, Zap, CheckCircle, ExternalLink } from 'lucide-react';
 import UserLlmConnectionDialog from '@/pages/user/settings/UserLlmConnectionDialog';
 import UserImageConnectionDialog from '@/pages/user/settings/UserImageConnectionDialog';
 import UserSiteBuilderConnectionDialog from '@/pages/user/settings/UserSiteBuilderConnectionDialog';
@@ -19,6 +20,58 @@ const UserAiSettings = () => {
   const [isImageDialogOpen, setIsImageDialogOpen] = useState(false);
   const [isSiteBuilderDialogOpen, setIsSiteBuilderDialogOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState(null);
+
+  // Configurações de IA padrão
+  const defaultAIs = [
+    {
+      id: 'openai-gpt4',
+      name: 'OpenAI GPT-4',
+      provider: 'OpenAI',
+      description: 'Modelo mais avançado da OpenAI, ideal para conversas complexas e análise de dados',
+      icon: '🤖',
+      capabilities: { text_generation: true },
+      features: ['Conversas avançadas', 'Análise de dados', 'Geração de conteúdo', 'Resolução de problemas'],
+      pricing: 'Pago por uso',
+      setupUrl: 'https://platform.openai.com/api-keys',
+      isPopular: true
+    },
+    {
+      id: 'google-gemini',
+      name: 'Google Gemini Pro',
+      provider: 'Google',
+      description: 'Modelo multimodal do Google, excelente para análise e geração de conteúdo',
+      icon: '💎',
+      capabilities: { text_generation: true },
+      features: ['Análise multimodal', 'Geração de texto', 'Raciocínio avançado', 'Integração Google'],
+      pricing: 'Gratuito (com limites)',
+      setupUrl: 'https://makersuite.google.com/app/apikey',
+      isPopular: true
+    },
+    {
+      id: 'anthropic-claude',
+      name: 'Anthropic Claude',
+      provider: 'Anthropic',
+      description: 'Modelo focado em segurança e utilidade, ótimo para tarefas complexas',
+      icon: '🧠',
+      capabilities: { text_generation: true },
+      features: ['Segurança avançada', 'Análise detalhada', 'Código e texto', 'Raciocínio complexo'],
+      pricing: 'Pago por uso',
+      setupUrl: 'https://console.anthropic.com/',
+      isPopular: false
+    },
+    {
+      id: 'openai-dalle',
+      name: 'OpenAI DALL-E 3',
+      provider: 'OpenAI',
+      description: 'Gerador de imagens mais avançado, cria imagens de alta qualidade',
+      icon: '🎨',
+      capabilities: { image_generation: true },
+      features: ['Geração de imagens', 'Alta qualidade', 'Estilos diversos', 'Edição de imagens'],
+      pricing: 'Pago por imagem',
+      setupUrl: 'https://platform.openai.com/api-keys',
+      isPopular: true
+    }
+  ];
 
   const fetchConnections = useCallback(async () => {
     if (!user) return;
@@ -62,21 +115,7 @@ const UserAiSettings = () => {
   };
 
   const handleToggleActive = async (connection) => {
-    if (!connection.is_active) {
-      let connectionsToDeactivate = [];
-      if (connection.capabilities?.text_generation) {
-        connectionsToDeactivate = llmConnections.filter(c => c.is_active);
-      } else if (connection.capabilities?.image_generation) {
-        connectionsToDeactivate = imageConnections.filter(c => c.is_active);
-      } else if (connection.capabilities?.site_builder) {
-        connectionsToDeactivate = siteBuilderConnections.filter(c => c.is_active);
-      }
-
-      for (const conn of connectionsToDeactivate) {
-        await supabase.from('user_ai_connections').update({ is_active: false }).eq('id', conn.id);
-      }
-    }
-
+    // Permitir múltiplas IAs ativas ao mesmo tempo - remover lógica de desativação automática
     const { error } = await supabase
       .from('user_ai_connections')
       .update({ is_active: !connection.is_active })
@@ -88,6 +127,24 @@ const UserAiSettings = () => {
         toast.success(`Conexão ${!connection.is_active ? 'ativada' : 'desativada'}!`);
         fetchConnections();
     }
+  };
+
+  const handleQuickSetup = (ai) => {
+    setEditingConnection(null);
+    if (ai.capabilities?.text_generation) {
+      setIsLlmDialogOpen(true);
+    } else if (ai.capabilities?.image_generation) {
+      setIsImageDialogOpen(true);
+    }
+  };
+
+  const isAIConfigured = (ai) => {
+    if (ai.capabilities?.text_generation) {
+      return llmConnections.some(conn => conn.provider === ai.provider);
+    } else if (ai.capabilities?.image_generation) {
+      return imageConnections.some(conn => conn.provider === ai.provider);
+    }
+    return false;
   };
   
   const cardVariants = {
@@ -174,6 +231,116 @@ const UserAiSettings = () => {
           fetchConnections();
         }}
       />
+
+      {/* Seção de IA Padrão */}
+      <section>
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Zap className="w-6 h-6 text-primary" />
+            <h2 className="text-2xl font-bold tracking-tight">Configuração Rápida de IA</h2>
+          </div>
+          <p className="text-muted-foreground">Escolha uma IA padrão para começar rapidamente. Configure com apenas alguns cliques!</p>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {defaultAIs.map((ai, index) => (
+            <motion.div
+              key={ai.id}
+              custom={index}
+              variants={cardVariants}
+              initial="hidden"
+              animate="visible"
+            >
+              <Card className={`relative overflow-hidden border-2 transition-all duration-200 hover:shadow-lg ${
+                isAIConfigured(ai) 
+                  ? 'border-green-500 bg-green-50/50 dark:bg-green-950/20' 
+                  : 'border-border hover:border-primary/50'
+              }`}>
+                {ai.isPopular && (
+                  <div className="absolute top-3 right-3">
+                    <Badge variant="secondary" className="bg-primary text-primary-foreground">
+                      Popular
+                    </Badge>
+                  </div>
+                )}
+                
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="text-2xl">{ai.icon}</div>
+                      <div>
+                        <CardTitle className="text-lg">{ai.name}</CardTitle>
+                        <CardDescription className="text-sm">{ai.provider}</CardDescription>
+                      </div>
+                    </div>
+                    {isAIConfigured(ai) && (
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                    )}
+                  </div>
+                </CardHeader>
+                
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-muted-foreground">{ai.description}</p>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="font-medium">Recursos:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {ai.features.slice(0, 3).map((feature, idx) => (
+                        <Badge key={idx} variant="outline" className="text-xs">
+                          {feature}
+                        </Badge>
+                      ))}
+                      {ai.features.length > 3 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{ai.features.length - 3} mais
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">{ai.pricing}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => window.open(ai.setupUrl, '_blank')}
+                      className="h-6 px-2 text-xs"
+                    >
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                      Obter chave
+                    </Button>
+                  </div>
+                </CardContent>
+                
+                <CardFooter>
+                  <Button
+                    onClick={() => handleQuickSetup(ai)}
+                    className="w-full"
+                    variant={isAIConfigured(ai) ? "outline" : "default"}
+                    disabled={isAIConfigured(ai)}
+                  >
+                    {isAIConfigured(ai) ? (
+                      <>
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Já configurado
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 mr-2" />
+                        Configurar agora
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      <div className="border-b border-border"></div>
 
       {/* LLM Connections */}
       <section>

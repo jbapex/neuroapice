@@ -55,12 +55,32 @@ const BuildingOverlay = ({ duration = 30 }) => {
 };
 
 
-const PreviewPanel = ({ htmlContent, setHtmlContent, selectedElement, setSelectedElement, onOpenImageBank, isBuilding }) => {
+const PreviewPanel = ({ 
+  htmlContent, setHtmlContent,           // Modo standalone
+  pageStructure, setPageStructure,       // Modo modal
+  selectedElement, setSelectedElement, 
+  onOpenImageBank, isBuilding 
+}) => {
   const [view, setView] = useState('desktop');
   const iframeRef = useRef(null);
   const { toast } = useToast();
   const { projectId } = useParams();
   const isMobile = useMediaQuery("(max-width: 768px)");
+
+  // Detecção automática do modo de uso
+  const isModalMode = !htmlContent && pageStructure;
+  const isStandaloneMode = htmlContent && !pageStructure;
+
+  // Converte pageStructure para HTML quando estiver no modal
+  const getHtmlContent = () => {
+    if (isStandaloneMode) {
+      return htmlContent;
+    }
+    if (isModalMode && pageStructure) {
+      return pageStructure.map(module => module.html).join('');
+    }
+    return '';
+  };
 
   const deviceViews = {
     mobile: 'w-[375px] h-[667px]',
@@ -78,6 +98,7 @@ const PreviewPanel = ({ htmlContent, setHtmlContent, selectedElement, setSelecte
     const iframe = iframeRef.current;
     if (!iframe) return;
 
+    const currentHtmlContent = getHtmlContent();
     const fullHtml = `
       <!DOCTYPE html>
       <html lang="pt-BR">
@@ -92,13 +113,13 @@ const PreviewPanel = ({ htmlContent, setHtmlContent, selectedElement, setSelecte
         </style>
       </head>
       <body>
-        <div id="root">${htmlContent}</div>
+        <div id="root">${currentHtmlContent}</div>
       </body>
       </html>
     `;
 
     iframe.srcdoc = fullHtml;
-  }, [htmlContent]);
+  }, [htmlContent, pageStructure, getHtmlContent]);
 
   const clearSelection = useCallback(() => {
     const iframeDoc = iframeRef.current?.contentDocument;
@@ -146,19 +167,35 @@ const PreviewPanel = ({ htmlContent, setHtmlContent, selectedElement, setSelecte
   const handlePopoverSave = (newContent) => {
     if (!selectedElement) return;
 
-    setHtmlContent(prevContent => {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = prevContent;
-        const elToUpdate = tempDiv.querySelector(`[data-id="${selectedElement.dataId}"]`);
-        if (elToUpdate) {
-            elToUpdate.innerHTML = newContent;
-            toast({ title: 'Texto atualizado com sucesso!' });
-            return tempDiv.innerHTML;
-        } else {
-            toast({ title: 'Erro ao atualizar', description: 'Não foi possível encontrar o elemento para salvar.', variant: 'destructive'});
-            return prevContent;
-        }
-    });
+    if (isStandaloneMode && setHtmlContent) {
+      setHtmlContent(prevContent => {
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = prevContent;
+          const elToUpdate = tempDiv.querySelector(`[data-id="${selectedElement.dataId}"]`);
+          if (elToUpdate) {
+              elToUpdate.innerHTML = newContent;
+              toast({ title: 'Texto atualizado com sucesso!' });
+              return tempDiv.innerHTML;
+          } else {
+              toast({ title: 'Erro ao atualizar', description: 'Não foi possível encontrar o elemento para salvar.', variant: 'destructive'});
+              return prevContent;
+          }
+      });
+    } else if (isModalMode && setPageStructure) {
+      setPageStructure(prevStructure => {
+        return prevStructure.map(module => {
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = module.html;
+          const elToUpdate = tempDiv.querySelector(`[data-id="${selectedElement.dataId}"]`);
+          if (elToUpdate) {
+              elToUpdate.innerHTML = newContent;
+              toast({ title: 'Texto atualizado com sucesso!' });
+              return { ...module, html: tempDiv.innerHTML };
+          }
+          return module;
+        });
+      });
+    }
 
     clearSelection();
   };
@@ -166,19 +203,35 @@ const PreviewPanel = ({ htmlContent, setHtmlContent, selectedElement, setSelecte
   const handleElementRemove = () => {
     if (!selectedElement) return;
   
-    setHtmlContent(prevContent => {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = prevContent;
-        const elToRemove = tempDiv.querySelector(`[data-id="${selectedElement.dataId}"]`);
-        if (elToRemove) {
-            elToRemove.remove();
-            toast({ title: 'Elemento removido com sucesso!' });
-            return tempDiv.innerHTML;
-        } else {
-            toast({ title: 'Erro ao remover', description: 'Não foi possível encontrar o elemento para remover.', variant: 'destructive' });
-            return prevContent;
-        }
-    });
+    if (isStandaloneMode && setHtmlContent) {
+      setHtmlContent(prevContent => {
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = prevContent;
+          const elToRemove = tempDiv.querySelector(`[data-id="${selectedElement.dataId}"]`);
+          if (elToRemove) {
+              elToRemove.remove();
+              toast({ title: 'Elemento removido com sucesso!' });
+              return tempDiv.innerHTML;
+          } else {
+              toast({ title: 'Erro ao remover', description: 'Não foi possível encontrar o elemento para remover.', variant: 'destructive' });
+              return prevContent;
+          }
+      });
+    } else if (isModalMode && setPageStructure) {
+      setPageStructure(prevStructure => {
+        return prevStructure.map(module => {
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = module.html;
+          const elToRemove = tempDiv.querySelector(`[data-id="${selectedElement.dataId}"]`);
+          if (elToRemove) {
+              elToRemove.remove();
+              toast({ title: 'Elemento removido com sucesso!' });
+              return { ...module, html: tempDiv.innerHTML };
+          }
+          return module;
+        });
+      });
+    }
   
     clearSelection();
   };
@@ -206,7 +259,7 @@ const PreviewPanel = ({ htmlContent, setHtmlContent, selectedElement, setSelecte
             iframe.removeEventListener('load', handleLoad);
         }
     };
-  }, [htmlContent, handleElementClick]);
+  }, [htmlContent, pageStructure, handleElementClick, updateIframeContent]);
 
   const handleDownload = () => {
     const iframe = iframeRef.current;

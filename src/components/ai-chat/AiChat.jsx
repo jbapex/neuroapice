@@ -14,7 +14,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
     import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
     const AiChat = ({ auth }) => {
-      const { user, profile, getLlmIntegrations } = auth;
+      const { user, profile } = auth;
       const [sessions, setSessions] = useState([]);
       const [activeSessionId, setActiveSessionId] = useState(null);
       const [messages, setMessages] = useState([]);
@@ -33,34 +33,106 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
       const isDesktop = useMediaQuery("(min-width: 768px)");
 
       const fetchIntegrations = useCallback(async () => {
-        if (!profile) return;
-        const data = await getLlmIntegrations();
-        setLlmIntegrations(data);
-        if (data.length > 0) {
-          if (profile.has_custom_ai_access) {
-            setSelectedLlmId(data[0].id);
-          } else {
-            const defaultIntegration = data.find(i => i.name.toLowerCase().includes('chat')) || data[0];
-            if (defaultIntegration) {
-              setSelectedLlmId(defaultIntegration.id);
+        if (!user) return;
+        try {
+          // 1) Conexões pessoais ativas com text_generation
+          let personal = [];
+          const { data: userData, error: userError } = await supabase
+            .from('user_ai_connections')
+            .select('id, name, provider, default_model, capabilities, is_active')
+            .eq('user_id', user.id)
+            .eq('is_active', true);
+
+          if (!userError && userData) {
+            personal = userData
+              .filter(c => c.capabilities?.text_generation === true)
+              .map(c => ({ ...c, is_user_connection: true, source: 'personal' }));
+          }
+
+          // 2) Integrações globais apenas se não houver pessoais
+          let global = [];
+          if (personal.length === 0) {
+            const { data: globalData, error: globalError } = await supabase
+              .from('llm_integrations')
+              .select('id, name, provider, default_model, is_active');
+            if (!globalError && globalData) {
+              global = globalData
+                .filter(i => i.is_active !== false)
+                .map(i => ({ ...i, is_user_connection: false, source: 'global' }));
             }
           }
+
+          const all = [...personal, ...global];
+          setLlmIntegrations(all);
+          if (all.length > 0 && !selectedLlmId) {
+            setSelectedLlmId(all[0].id);
+          }
+        } catch (e) {
+          // falha silenciosa com toast leve
+          // useToast já está instanciado
+          toast({ title: 'Erro ao carregar IAs', description: 'Não foi possível carregar as conexões de IA.', variant: 'destructive' });
         }
-      }, [getLlmIntegrations, profile]);
+      }, [user, selectedLlmId, toast]);
 
       const fetchSessions = useCallback(async () => {
         setIsSessionsLoading(true);
         if (!user) return;
+        
+        // Buscar todas as sessões do usuário
         const { data, error } = await supabase
           .from('ai_chat_sessions')
-          .select('id, title, llm_integration_id, user_ai_connection_id, updated_at')
+          .select('id, title, llm_integration_id, user_ai_connection_id, updated_at, messages')
           .eq('user_id', user.id)
           .order('updated_at', { ascending: false });
 
         if (error) {
           toast({ title: "Erro ao buscar conversas", description: error.message, variant: "destructive" });
+          setSessions([]);
         } else {
-          setSessions(data);
+          // Filtrar sessões que NÃO são do Chat IA
+          // Identificar padrões de outras páginas que não devem aparecer aqui
+          const chatIaSessions = (data || []).filter(session => {
+            if (!session.messages || session.messages.length === 0) {
+              // Sessões sem mensagens podem ser do Chat IA (novas)
+              return true;
+            }
+
+            const title = session.title?.toLowerCase() || '';
+            const messagesText = JSON.stringify(session.messages || []).toLowerCase();
+            
+            // Padrões que indicam que NÃO é do Chat IA:
+            const isNotChatIa = 
+              // Gerador de Conteúdo - padrão [CONTEXTO] com módulo/cliente/campanha
+              messagesText.includes('[contexto]') ||
+              messagesText.includes('módulo:') ||
+              messagesText.includes('cliente:') && messagesText.includes('campanha:') ||
+              title.includes('[contexto]') ||
+              // Client Onboarding - padrões de análise de cadastro
+              messagesText.includes('analise este cadastro') ||
+              messagesText.includes('analisar cadastro') ||
+              messagesText.includes('estrategista de marketing') && messagesText.includes('cadastros') ||
+              title.includes('analise este cadastro') ||
+              title.includes('analisar cadastro') ||
+              // Site Builder - mensagem inicial típica
+              messagesText.includes('construir sua página') ||
+              messagesText.includes('como posso te ajudar a construir') ||
+              // Geração de conteúdo para módulos (padrão system message com base_prompt)
+              session.messages.some(msg => 
+                msg.role === 'system' && 
+                (msg.content?.includes('módulo') || msg.content?.includes('gerar conteúdo'))
+              ) ||
+              // Títulos muito longos ou específicos de geração
+              (title.length > 100 && (
+                title.includes('gerar') || 
+                title.includes('conteúdo') || 
+                title.includes('módulo')
+              ));
+            
+            // Se não tiver nenhum desses padrões, assumir que é do Chat IA
+            return !isNotChatIa;
+          });
+
+          setSessions(chatIaSessions);
         }
         setIsSessionsLoading(false);
       }, [user, toast]);
@@ -95,9 +167,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
           setMessages([]);
         } else {
           setMessages(data.messages || []);
-          if (!profile?.has_custom_ai_access) {
-             setSelectedLlmId(data.llm_integration_id || data.user_ai_connection_id);
-          }
+          // sempre restaurar a IA usada na sessão, independente do tipo de acesso
+          const restored = data.llm_integration_id || data.user_ai_connection_id;
+          if (restored) setSelectedLlmId(restored);
         }
         setIsLoading(false);
         if (!isDesktop) setIsSidebarOpen(false);
@@ -169,6 +241,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
               messages: newMessages.map(({ role, content }) => ({ role, content })),
               llm_integration_id: selectedLlmId,
               is_user_connection: currentIntegration.is_user_connection,
+              context: 'chat_ia', // Identificar que esta sessão é do Chat IA
             }),
             signal,
           });
@@ -241,6 +314,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
                         onDeleteSession={handleDeleteRequest}
                         isDesktop={isDesktop}
                         onClose={() => setIsSidebarOpen(false)}
+                        onSessionUpdate={fetchSessions}
                     />
                 </ResizablePanel>
             )}
@@ -346,6 +420,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
                         onDeleteSession={handleDeleteRequest}
                         isDesktop={isDesktop}
                         onClose={() => setIsSidebarOpen(false)}
+                        onSessionUpdate={fetchSessions}
                     />
                 </motion.div>
             )}
