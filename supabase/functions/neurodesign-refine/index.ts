@@ -31,15 +31,21 @@ async function imageUrlToBase64(imageUrl: string): Promise<{ data: string; mimeT
   }
 }
 
-async function refineWithOpenRouter(conn: Conn, sourceImageUrl: string, instruction: string): Promise<{ url: string } | null> {
+function buildContentOpenRouter(imageUrls: string[], textPrompt: string): Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string }; imageUrl: { url: string } }> {
+  const content: Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string }; imageUrl: { url: string } }> = [
+    { type: "text" as const, text: textPrompt },
+  ];
+  for (const u of imageUrls) {
+    content.push({ type: "image_url" as const, image_url: { url: u }, imageUrl: { url: u } });
+  }
+  return content;
+}
+
+async function refineWithOpenRouter(conn: Conn, imageUrls: string[], textPrompt: string): Promise<{ url: string } | null> {
   const baseUrl = conn.api_url.replace(/\/$/, "");
   const url = `${baseUrl}/chat/completions`;
   const model = conn.default_model || "google/gemini-2.0-flash-exp:free";
-  const textPrompt = `Apply this change to the image, keep the rest the same: ${instruction}`;
-  const content = [
-    { type: "text" as const, text: textPrompt },
-    { type: "image_url" as const, image_url: { url: sourceImageUrl }, imageUrl: { url: sourceImageUrl } },
-  ];
+  const content = buildContentOpenRouter(imageUrls, textPrompt);
   const body = {
     model,
     messages: [{ role: "user" as const, content }],
@@ -60,16 +66,17 @@ async function refineWithOpenRouter(conn: Conn, sourceImageUrl: string, instruct
   return outUrl ? { url: outUrl } : null;
 }
 
-async function refineWithGoogleGemini(conn: Conn, sourceImageUrl: string, instruction: string): Promise<{ url: string } | null> {
+async function refineWithGoogleGemini(conn: Conn, imageUrls: string[], textPrompt: string): Promise<{ url: string } | null> {
   const baseUrl = conn.api_url.replace(/\/$/, "");
   const model = conn.default_model || "gemini-2.5-flash-image";
   const apiUrl = `${baseUrl}/models/${model}:generateContent`;
-  const sourceImg = await imageUrlToBase64(sourceImageUrl);
-  if (!sourceImg) return null;
-  const parts = [
-    { inlineData: { mimeType: sourceImg.mimeType, data: sourceImg.data } },
-    { text: `Apply this change to the image, keep the rest the same: ${instruction}` },
-  ];
+  const parts: Array<{ inlineData?: { mimeType: string; data: string }; text?: string }> = [];
+  for (const imageUrl of imageUrls) {
+    const img = await imageUrlToBase64(imageUrl);
+    if (!img) return null;
+    parts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+  }
+  parts.push({ text: textPrompt });
   const body = {
     contents: [{ parts }],
     generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
@@ -109,13 +116,28 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { projectId, runId, imageId, instruction, configOverrides, userAiConnectionId } = body as {
+    const {
+      projectId,
+      runId,
+      imageId,
+      instruction,
+      configOverrides,
+      userAiConnectionId,
+      referenceImageUrl,
+      replacementImageUrl,
+      region,
+      regionCropImageUrl,
+    } = body as {
       projectId: string;
       runId: string;
       imageId: string;
       instruction: string;
       configOverrides?: Record<string, unknown>;
       userAiConnectionId?: string;
+      referenceImageUrl?: string;
+      replacementImageUrl?: string;
+      region?: { x: number; y: number; width: number; height: number };
+      regionCropImageUrl?: string;
     };
 
     if (!projectId || !runId || !imageId || !instruction?.trim()) {
@@ -151,7 +173,14 @@ serve(async (req) => {
       provider: providerLabel,
       parent_run_id: runId,
       refine_instruction: instruction.trim(),
-      provider_request_json: { instruction: instruction.trim(), configOverrides },
+      provider_request_json: {
+        instruction: instruction.trim(),
+        configOverrides,
+        referenceImageUrl: referenceImageUrl ?? null,
+        replacementImageUrl: replacementImageUrl ?? null,
+        region: region ?? null,
+        regionCropImageUrl: regionCropImageUrl ?? null,
+      },
     };
     const { data: run, error: runError } = await supabase.from("neurodesign_generation_runs").insert(runInsert).select("id").single();
     if (runError || !run) {
@@ -160,6 +189,24 @@ serve(async (req) => {
 
     const sourceImageUrl = sourceImage.url || sourceImage.thumbnail_url;
     let refinedUrl: string = PLACEHOLDER_IMAGE;
+
+    const imageUrls: string[] = [sourceImageUrl];
+    let textPrompt: string;
+
+    if (referenceImageUrl && !replacementImageUrl) {
+      imageUrls.push(referenceImageUrl);
+      textPrompt = `Apply the visual style of the second image (reference art) to the first image. Keep the same composition and subject of the first image, but make it look similar to the reference. Additional instruction: ${instruction.trim()}`;
+    } else if (replacementImageUrl) {
+      if (regionCropImageUrl) {
+        imageUrls.push(regionCropImageUrl, replacementImageUrl);
+        textPrompt = `In the first image, replace the region that corresponds to the content shown in the second image (the selected crop) with the content of the third image. Keep the rest of the first image unchanged. ${instruction.trim()}`;
+      } else {
+        imageUrls.push(replacementImageUrl);
+        textPrompt = `In the first image, replace the element or area described in the following instruction with the content of the second image. Keep the rest unchanged. Instruction: ${instruction.trim()}`;
+      }
+    } else {
+      textPrompt = `Apply this change to the image, keep the rest the same: ${instruction.trim()}`;
+    }
 
     if (userAiConnectionId && sourceImageUrl) {
       const { data: conn } = await supabase
@@ -171,13 +218,13 @@ serve(async (req) => {
         const apiUrl = (conn.api_url || "").toLowerCase();
         try {
           if (apiUrl.includes("openrouter")) {
-            const result = await refineWithOpenRouter(conn as Conn, sourceImageUrl, instruction.trim());
+            const result = await refineWithOpenRouter(conn as Conn, imageUrls, textPrompt);
             if (result) {
               refinedUrl = result.url;
               providerLabel = "openrouter";
             }
           } else if (apiUrl.includes("generativelanguage") || conn.provider?.toLowerCase() === "google") {
-            const result = await refineWithGoogleGemini(conn as Conn, sourceImageUrl, instruction.trim());
+            const result = await refineWithGoogleGemini(conn as Conn, imageUrls, textPrompt);
             if (result) {
               refinedUrl = result.url;
               providerLabel = "google";

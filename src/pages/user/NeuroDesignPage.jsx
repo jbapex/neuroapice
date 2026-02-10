@@ -162,7 +162,7 @@ const NeuroDesignPage = () => {
     }
   };
 
-  const handleRefine = async (instruction, configOverrides) => {
+  const handleRefine = async (payload) => {
     if (!selectedProject || !selectedImage?.id) {
       toast({ title: 'Selecione uma imagem para refinar', variant: 'destructive' });
       return;
@@ -172,17 +172,30 @@ const NeuroDesignPage = () => {
       toast({ title: 'Execução não encontrada', variant: 'destructive' });
       return;
     }
+    const instruction = typeof payload === 'string' ? payload : payload?.instruction ?? '';
+    const configOverrides = typeof payload === 'object' && payload !== null ? payload.configOverrides : undefined;
+    const referenceImageUrl = typeof payload === 'object' && payload !== null ? payload.referenceImageUrl : undefined;
+    const replacementImageUrl = typeof payload === 'object' && payload !== null ? payload.replacementImageUrl : undefined;
+    const region = typeof payload === 'object' && payload !== null ? payload.region : undefined;
+    const regionCropImageUrl = typeof payload === 'object' && payload !== null ? payload.regionCropImageUrl : undefined;
+
     setIsRefining(true);
     try {
+      const body = {
+        projectId: selectedProject.id,
+        runId,
+        imageId: selectedImage.id,
+        instruction,
+        configOverrides,
+        userAiConnectionId: currentConfig?.user_ai_connection_id || null,
+      };
+      if (referenceImageUrl) body.referenceImageUrl = referenceImageUrl;
+      if (replacementImageUrl) body.replacementImageUrl = replacementImageUrl;
+      if (region) body.region = region;
+      if (regionCropImageUrl) body.regionCropImageUrl = regionCropImageUrl;
+
       const { data, error } = await supabase.functions.invoke('neurodesign-refine', {
-        body: {
-          projectId: selectedProject.id,
-          runId,
-          imageId: selectedImage.id,
-          instruction,
-          configOverrides,
-          userAiConnectionId: currentConfig?.user_ai_connection_id || null,
-        },
+        body,
       });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
@@ -347,6 +360,8 @@ Regras:
               </div>
               <div className="flex-1 min-w-0 flex flex-col">
                 <PreviewPanel
+                  project={selectedProject}
+                  user={user}
                   selectedImage={selectedImage}
                   images={images}
                   isGenerating={isGenerating}

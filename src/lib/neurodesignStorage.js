@@ -9,7 +9,7 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'im
  * Upload de arquivo para o bucket neurodesign.
  * @param {string} userId - auth user id
  * @param {string} projectId - neurodesign project id
- * @param {'subject'|'scenario'|'style_refs'|'logo'} type - pasta do tipo
+ * @param {'subject'|'scenario'|'style_refs'|'logo'|'refine_ref'|'refine_replacement'|'refine_crop'} type - pasta do tipo
  * @param {File} file
  * @returns {Promise<string>} URL pública
  */
