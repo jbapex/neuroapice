@@ -64,13 +64,13 @@ const AuthPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-blue-100 to-purple-200 dark:from-gray-900 dark:to-black">
+    <div className="min-h-[100dvh] flex items-center justify-center p-4 py-6 bg-gradient-to-br from-blue-100 to-purple-200 dark:from-gray-900 dark:to-black overflow-x-hidden">
        <div className="absolute inset-0 overflow-hidden">
         <motion.div animate={{ x: [0, 100, 0], y: [0, -100, 0], rotate: [0, 180, 360] }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }} className="absolute top-1/4 left-1/4 w-32 h-32 bg-primary/10 rounded-full blur-2xl" />
         <motion.div animate={{ x: [0, -100, 0], y: [0, 100, 0], rotate: [360, 180, 0] }} transition={{ duration: 25, repeat: Infinity, ease: "linear" }} className="absolute bottom-1/4 right-1/4 w-40 h-40 bg-secondary/10 rounded-full blur-2xl" />
       </div>
 
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} className="relative z-10 w-full max-w-md">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }} className="relative z-10 w-full max-w-md px-0">
         <Card className="bg-card/80 backdrop-blur-sm border-border shadow-2xl dark:border-white/10">
           <CardHeader className="text-center">
             <div className="mx-auto bg-primary/10 p-4 rounded-full inline-block">
@@ -104,7 +104,7 @@ const AuthPage = () => {
                   <Input id="password" type="password" value={formData.password} onChange={handleInputChange} placeholder="Sua senha" className="pl-10 bg-input border-input text-foreground placeholder:text-muted-foreground" required />
                 </div>
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" className="w-full min-h-[44px] touch-target" disabled={loading}>
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isLogin ? 'Entrar' : 'Cadastrar')}
               </Button>
             </form>

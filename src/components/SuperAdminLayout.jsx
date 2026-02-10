@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
-import { Home, Settings, Users, Layers, Zap, MessageSquare as BotMessageSquare, BarChart, PenSquare, Palette, ClipboardList, LogOut, Brain, BookCopy, Mic } from 'lucide-react';
+import { useMediaQuery } from '@/hooks/use-media-query';
+import { Home, Settings, Users, Layers, Zap, MessageSquare as BotMessageSquare, PenSquare, Palette, ClipboardList, LogOut, Brain, BookCopy, Mic, Menu } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -12,6 +13,8 @@ const SuperAdminLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
 
   const handleSignOut = async () => {
     await signOut();
@@ -51,8 +54,56 @@ const SuperAdminLayout = () => {
     transition: { duration: 0.4 }
   };
 
+  const SidebarContent = () => (
+    <>
+      <div className="flex items-center p-4 h-16 border-b bg-card text-foreground justify-start">
+        <Brain className="w-6 h-6 text-primary flex-shrink-0" />
+        <div className="ml-3">
+          <h1 className="text-xl font-bold whitespace-nowrap">Neuro Ápice</h1>
+          <p className="text-xs text-muted-foreground whitespace-nowrap">Painel Super Admin</p>
+        </div>
+      </div>
+      <nav className="flex-1 overflow-y-auto p-2 space-y-1">
+        {navLinks.map((link) => (
+          <NavLink
+            key={link.to}
+            to={link.to}
+            onClick={() => !isDesktop && setIsMobileMenuOpen(false)}
+            className={({ isActive }) =>
+              `flex items-center p-3 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${
+                isActive
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+              }`
+            }
+          >
+            <link.icon className="h-5 w-5 flex-shrink-0" />
+            <span className="ml-4 whitespace-nowrap">{link.label}</span>
+          </NavLink>
+        ))}
+      </nav>
+      <div className="p-4 border-t mt-auto">
+        <div className="flex items-center gap-3 mb-4">
+          <Avatar className="h-10 w-10 flex-shrink-0">
+            <AvatarFallback className="bg-primary text-primary-foreground font-bold">
+              {getInitials(user?.user_metadata?.name)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 overflow-hidden min-w-0">
+            <p className="font-semibold text-sm truncate">{user?.user_metadata?.name || user?.email}</p>
+            <p className="text-xs text-muted-foreground truncate">{user?.user_metadata?.user_type}</p>
+          </div>
+        </div>
+        <Button variant="ghost" className="w-full justify-start text-muted-foreground hover:text-foreground min-h-[44px] touch-target" onClick={() => { handleSignOut(); !isDesktop && setIsMobileMenuOpen(false); }}>
+          <LogOut className="mr-2 h-4 w-4" />
+          Sair
+        </Button>
+      </div>
+    </>
+  );
+
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen bg-background overflow-hidden">
       <motion.aside
         initial={false}
         animate={{ width: isSidebarCollapsed ? '5rem' : '16rem' }}
@@ -79,7 +130,7 @@ const SuperAdminLayout = () => {
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
-                `flex items-center p-3 rounded-lg text-sm font-medium transition-colors ${isSidebarCollapsed ? 'justify-center' : ''} ${
+                `flex items-center p-3 rounded-lg text-sm font-medium transition-colors min-h-[44px] ${isSidebarCollapsed ? 'justify-center' : ''} ${
                   isActive
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -119,11 +170,44 @@ const SuperAdminLayout = () => {
           )}
         </div>
       </motion.aside>
-      <main className="flex-1 flex flex-col">
-        <header className="flex h-16 items-center justify-end border-b bg-card px-4 md:px-6">
+
+      {!isDesktop && (
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/60 z-40"
+                onClick={() => setIsMobileMenuOpen(false)}
+                aria-hidden="true"
+              />
+              <motion.div
+                initial={{ x: '-100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '-100%' }}
+                transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                className="fixed top-0 left-0 h-full w-72 max-w-[85vw] bg-card border-r z-50 flex flex-col overflow-hidden"
+              >
+                <SidebarContent />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+      )}
+
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="flex h-14 md:h-16 items-center justify-between border-b bg-card px-3 sm:px-4 md:px-6 shrink-0">
+          {!isDesktop && (
+            <Button variant="ghost" size="icon" className="touch-target" onClick={() => setIsMobileMenuOpen(true)} aria-label="Abrir menu">
+              <Menu className="h-5 w-5" />
+            </Button>
+          )}
+          <div className="flex-1 min-w-0" />
           <ThemeToggle />
         </header>
-        <div className="flex-1 overflow-y-auto bg-muted/40">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden bg-muted/40">
            <AnimatePresence mode="wait">
              <motion.div
                 key={location.pathname}
@@ -131,7 +215,7 @@ const SuperAdminLayout = () => {
                 animate="animate"
                 exit="exit"
                 variants={pageVariants}
-                className="p-4 sm:p-6 lg:p-8 h-full"
+                className="p-4 sm:p-6 lg:p-8 h-full w-full max-w-full"
               >
               <Outlet />
             </motion.div>

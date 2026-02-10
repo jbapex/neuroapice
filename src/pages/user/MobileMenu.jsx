@@ -14,20 +14,20 @@ import React from 'react';
     
       const menuItems = [
         { name: 'Clientes', icon: Users, path: '/clientes' },
-        { name: 'Planejamento Estratégico', icon: ClipboardList, path: '/planejamento' },
+        { name: 'Planejamento Estratégico', icon: ClipboardList, path: '/ferramentas/planejamento' },
         { name: 'Configurações', icon: Settings, path: '/settings' },
       ];
     
       return (
-        <div className="p-4">
-          <h1 className="text-2xl font-bold mb-6">Menu</h1>
+        <div className="p-4 pb-24 md:pb-4 container-responsive">
+          <h1 className="text-xl sm:text-2xl font-bold mb-6">Menu</h1>
           
           <div className="space-y-2">
             {menuItems.map(item => (
               <NavLink
                 key={item.name}
                 to={item.path}
-                className="flex items-center justify-between p-4 bg-card rounded-lg shadow-sm hover:bg-muted transition-colors"
+                className="flex items-center justify-between p-4 min-h-[44px] bg-card rounded-lg shadow-sm hover:bg-muted transition-colors touch-target"
               >
                 <div className="flex items-center">
                   <item.icon className="w-5 h-5 mr-4 text-muted-foreground" />

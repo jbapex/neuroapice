@@ -35,7 +35,7 @@ const MobileNavBar = () => {
   const isToolsActive = location.pathname.startsWith('/ferramentas');
   
   return (
-    <nav className="fixed bottom-0 left-0 right-0 h-20 bg-background/80 backdrop-blur-lg border-t border-border md:hidden z-50">
+    <nav className="fixed bottom-0 left-0 right-0 h-20 bg-background/80 backdrop-blur-lg border-t border-border md:hidden z-50 pb-[env(safe-area-inset-bottom)]">
       <div className="grid h-full max-w-lg grid-cols-4 mx-auto">
         {navItems.map((item) => {
           const isActive = item.path === '/ferramentas' ? isToolsActive : location.pathname === item.path;
@@ -45,7 +45,7 @@ const MobileNavBar = () => {
               key={item.name}
               onClick={(e) => handleNavClick(e, item)}
               className={cn(
-                "inline-flex flex-col items-center justify-center px-2 group",
+                "inline-flex flex-col items-center justify-center px-2 py-2 min-h-[44px] min-w-[44px] group",
                 isAllowed ? "cursor-pointer hover:bg-muted" : "cursor-not-allowed opacity-60"
               )}
             >

@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const BUCKET = 'neurodesign';
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 
 /**
  * Upload de arquivo para o bucket neurodesign.
@@ -20,10 +20,12 @@ export async function uploadNeuroDesignFile(userId, projectId, type, file) {
   if (file.size > MAX_SIZE_BYTES) {
     throw new Error('Arquivo muito grande. Máximo 10MB.');
   }
-  if (!ALLOWED_TYPES.includes(file.type)) {
+  const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+  const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+  const hasAllowedType = ALLOWED_TYPES.includes(file.type) || (file.type === '' && allowedExtensions.includes(ext));
+  if (!hasAllowedType) {
     throw new Error('Tipo de arquivo não permitido. Use JPEG, PNG, WebP ou GIF.');
   }
-  const ext = file.name.split('.').pop() || 'png';
   const fileName = `${uuidv4()}.${ext}`;
   const filePath = `${userId}/projects/${projectId}/${type}/${fileName}`;
 

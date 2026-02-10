@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +66,8 @@ const BuilderPanel = ({ project, config, setConfig, imageConnections, onGenerate
   const { toast } = useToast();
   const [localConfig, setLocalConfig] = useState(config || defaultConfig());
   const [fillPromptInput, setFillPromptInput] = useState('');
+  const [isUploadingStyleRefs, setIsUploadingStyleRefs] = useState(false);
+  const styleRefsInputRef = useRef(null);
 
   React.useEffect(() => {
     const next = config || defaultConfig();
@@ -86,11 +88,18 @@ const BuilderPanel = ({ project, config, setConfig, imageConnections, onGenerate
 
   const handleUpload = useCallback(
     async (type, fileList) => {
-      if (!project?.id || !user) return;
+      if (!project?.id || !user) {
+        toast({
+          title: 'Não foi possível enviar a imagem',
+          description: 'Selecione um projeto primeiro e faça login.',
+          variant: 'destructive',
+        });
+        return;
+      }
       const files = Array.from(fileList || []);
+      if (files.length === 0) return;
       if (type === 'logo') {
         const file = files[0];
-        if (!file) return;
         try {
           const url = await uploadNeuroDesignFile(user.id, project.id, 'logo', file);
           update('logo_url', url);
@@ -102,19 +111,33 @@ const BuilderPanel = ({ project, config, setConfig, imageConnections, onGenerate
       const key = type === 'subject' ? 'subject_image_urls' : type === 'scenario' ? 'scenario_photo_urls' : 'style_reference_urls';
       const urls = [...(localConfig[key] || [])];
       const prevLen = urls.length;
-      for (const file of files) {
-        try {
-          const url = await uploadNeuroDesignFile(user.id, project.id, type === 'subject' ? 'subject' : type === 'scenario' ? 'scenario' : 'style_refs', file);
-          urls.push(url);
-        } catch (e) {
-          toast({ title: 'Erro no upload', description: e.message, variant: 'destructive' });
+      if (type === 'style_refs') setIsUploadingStyleRefs(true);
+      try {
+        for (const file of files) {
+          try {
+            const url = await uploadNeuroDesignFile(user.id, project.id, type === 'subject' ? 'subject' : type === 'scenario' ? 'scenario' : 'style_refs', file);
+            urls.push(url);
+          } catch (e) {
+            toast({ title: 'Erro no upload', description: e.message, variant: 'destructive' });
+          }
         }
-      }
-      update(key, urls);
-      if (type === 'style_refs' && urls.length > prevLen) {
-        const instructions = [...(localConfig.style_reference_instructions || [])];
-        for (let n = 0; n < urls.length - prevLen; n++) instructions.push('');
-        update('style_reference_instructions', instructions);
+        if (type === 'style_refs') {
+          const instructions = [...(localConfig.style_reference_instructions || [])];
+          for (let n = 0; n < urls.length - prevLen; n++) instructions.push('');
+          const nextConfig = { ...localConfig, style_reference_urls: urls, style_reference_instructions: instructions };
+          setLocalConfig(nextConfig);
+          setConfig?.(nextConfig);
+          if (urls.length > prevLen) {
+            toast({ title: 'Referência de estilo adicionada', description: `${urls.length - prevLen} imagem(ns) enviada(s).` });
+          }
+        } else {
+          update(key, urls);
+        }
+      } finally {
+        if (type === 'style_refs') {
+          setIsUploadingStyleRefs(false);
+          if (styleRefsInputRef.current) styleRefsInputRef.current.value = '';
+        }
       }
     },
     [project, user, localConfig, toast]
@@ -123,11 +146,14 @@ const BuilderPanel = ({ project, config, setConfig, imageConnections, onGenerate
   const removeImage = (key, index) => {
     const arr = [...(localConfig[key] || [])];
     arr.splice(index, 1);
-    update(key, arr);
     if (key === 'style_reference_urls') {
       const instructions = [...(localConfig.style_reference_instructions || [])];
       instructions.splice(index, 1);
-      update('style_reference_instructions', instructions);
+      const nextConfig = { ...localConfig, style_reference_urls: arr, style_reference_instructions: instructions };
+      setLocalConfig(nextConfig);
+      setConfig?.(nextConfig);
+    } else {
+      update(key, arr);
     }
   };
 
@@ -210,7 +236,14 @@ const BuilderPanel = ({ project, config, setConfig, imageConnections, onGenerate
           {(localConfig.subject_image_urls || []).map((url, i) => (
             <div key={i} className="relative w-16 h-16 rounded overflow-hidden bg-white/10">
               <img src={url} alt="" className="w-full h-full object-cover" />
-              <button type="button" onClick={() => removeImage('subject_image_urls', i)} className="absolute top-0 right-0 bg-black/70 p-1"><X className="h-3 w-3" /></button>
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeImage('subject_image_urls', i); }}
+                className="absolute top-0 right-0 z-10 flex items-center justify-center min-w-[36px] min-h-[36px] bg-black/70 hover:bg-black/90 text-white rounded-bl cursor-pointer touch-manipulation"
+                aria-label="Remover imagem do sujeito"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           ))}
           <label className="w-16 h-16 rounded border border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:bg-white/5">
@@ -296,7 +329,14 @@ const BuilderPanel = ({ project, config, setConfig, imageConnections, onGenerate
           {localConfig.logo_url ? (
             <div className="relative w-14 h-14 rounded overflow-hidden bg-white/10 shrink-0">
               <img src={localConfig.logo_url} alt="Logo" className="w-full h-full object-contain" />
-              <button type="button" onClick={() => update('logo_url', '')} className="absolute top-0 right-0 bg-black/70 p-0.5"><X className="h-2 w-2" /></button>
+              <button
+            type="button"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); update('logo_url', ''); }}
+            className="absolute top-0 right-0 z-10 flex items-center justify-center min-w-[36px] min-h-[36px] bg-black/70 hover:bg-black/90 text-white rounded-bl cursor-pointer touch-manipulation"
+            aria-label="Remover logo"
+          >
+            <X className="h-4 w-4" />
+          </button>
             </div>
           ) : null}
           <label className="w-14 h-14 rounded border border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:bg-white/5 shrink-0">
@@ -316,7 +356,14 @@ const BuilderPanel = ({ project, config, setConfig, imageConnections, onGenerate
             {(localConfig.scenario_photo_urls || []).map((url, i) => (
               <div key={i} className="relative w-14 h-14 rounded overflow-hidden bg-white/10">
                 <img src={url} alt="" className="w-full h-full object-cover" />
-                <button type="button" onClick={() => removeImage('scenario_photo_urls', i)} className="absolute top-0 right-0 bg-black/70 p-0.5"><X className="h-2 w-2" /></button>
+                <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeImage('scenario_photo_urls', i); }}
+                className="absolute top-0 right-0 z-10 flex items-center justify-center min-w-[36px] min-h-[36px] bg-black/70 hover:bg-black/90 text-white rounded-bl cursor-pointer touch-manipulation"
+                aria-label="Remover foto de cenário"
+              >
+                <X className="h-4 w-4" />
+              </button>
               </div>
             ))}
             <label className="w-14 h-14 rounded border border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:bg-white/5">
@@ -360,16 +407,40 @@ const BuilderPanel = ({ project, config, setConfig, imageConnections, onGenerate
 
       <div>
         <Label>Referências de estilo</Label>
+        <p className="text-xs text-muted-foreground mt-1">Envie imagens para a IA usar como referência visual (JPEG, PNG, WebP ou GIF, até 10MB).</p>
         <div className="flex gap-2 flex-wrap mt-2">
           {(localConfig.style_reference_urls || []).map((url, i) => (
             <div key={i} className="relative w-14 h-14 rounded overflow-hidden bg-white/10 shrink-0">
               <img src={url} alt="" className="w-full h-full object-cover" />
-              <button type="button" onClick={() => removeImage('style_reference_urls', i)} className="absolute top-0 right-0 bg-black/70 p-0.5"><X className="h-2 w-2" /></button>
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeImage('style_reference_urls', i); }}
+                className="absolute top-0 right-0 z-10 flex items-center justify-center min-w-[36px] min-h-[36px] bg-black/70 hover:bg-black/90 text-white rounded-bl cursor-pointer touch-manipulation"
+                aria-label="Remover referência de estilo"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           ))}
-          <label className="w-14 h-14 rounded border border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:bg-white/5 shrink-0">
-            <Upload className="h-4 w-4" />
-            <input type="file" accept="image/*" className="hidden" multiple onChange={(e) => handleUpload('style_refs', e.target.files)} />
+          <label className="relative w-14 h-14 rounded border border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:bg-white/5 shrink-0 overflow-hidden">
+            <input
+              ref={styleRefsInputRef}
+              id="neurodesign-style-refs-upload"
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
+              disabled={isUploadingStyleRefs}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              onChange={(e) => {
+                const files = e.target.files;
+                if (files?.length) handleUpload('style_refs', files);
+              }}
+            />
+            {isUploadingStyleRefs ? (
+              <span className="text-xs">...</span>
+            ) : (
+              <Upload className="h-4 w-4 pointer-events-none" />
+            )}
           </label>
         </div>
         {(localConfig.style_reference_urls || []).map((url, i) => (

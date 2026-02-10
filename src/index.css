@@ -55,11 +55,20 @@
   * {
     @apply border-border;
   }
+  html {
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: 'Inter', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    min-height: 100dvh;
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 
@@ -75,5 +84,13 @@
   }
   .dark .ring-primary {
      --tw-ring-color: #a855f7;
+  }
+  /* Responsivo mobile: área de toque mínima e containers */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .container-responsive {
+    @apply w-full max-w-full px-4 sm:px-6 lg:px-8;
   }
 }
