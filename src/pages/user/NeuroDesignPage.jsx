@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
@@ -21,6 +21,8 @@ const NeuroDesignPage = () => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
+  const generatingRef = useRef(false);
+  const refiningRef = useRef(false);
   const [imageConnections, setImageConnections] = useState([]);
   const [llmConnections, setLlmConnections] = useState([]);
   const [selectedLlmId, setSelectedLlmId] = useState(null);
@@ -123,13 +125,18 @@ const NeuroDesignPage = () => {
   }, [selectedProject, fetchRuns, fetchImages]);
 
   const handleGenerate = async (config) => {
+    if (generatingRef.current) return;
     if (!selectedProject) {
       toast({ title: 'Selecione um projeto', variant: 'destructive' });
       return;
     }
+    generatingRef.current = true;
     setIsGenerating(true);
     try {
-      const { data, error } = await supabase.functions.invoke('neurodesign-generate', {
+      const conn = imageConnections.find((c) => c.id === config?.user_ai_connection_id);
+      const isGoogle = conn?.provider?.toLowerCase() === 'google';
+      const fnName = isGoogle ? 'neurodesign-generate-google' : 'neurodesign-generate';
+      const { data, error } = await supabase.functions.invoke(fnName, {
         body: {
           projectId: selectedProject.id,
           configId: config?.id || null,
@@ -137,7 +144,8 @@ const NeuroDesignPage = () => {
           userAiConnectionId: config?.user_ai_connection_id || null,
         },
       });
-      if (error) throw new Error(error.message || 'Falha ao chamar o servidor de geração. Confira se a Edge Function neurodesign-generate está publicada no Supabase.');
+      const errMsg = data?.error || error?.message;
+      if (error) throw new Error(errMsg || `Falha ao chamar o servidor de geração. Confira se a Edge Function ${fnName} está publicada no Supabase.`);
       if (data?.error) throw new Error(data.error);
       const newImages = data?.images;
       if (newImages?.length) {
@@ -153,16 +161,26 @@ const NeuroDesignPage = () => {
         }
         toast({ title: 'Imagens geradas com sucesso!' });
       } else {
-        toast({ title: 'Geração concluída', description: 'Nenhuma imagem retornada. Verifique se a Edge Function neurodesign-generate está publicada no Supabase.', variant: 'destructive' });
+        toast({ title: 'Geração concluída', description: `Nenhuma imagem retornada. Verifique se a Edge Function ${fnName} está publicada no Supabase.`, variant: 'destructive' });
       }
     } catch (e) {
-      toast({ title: 'Erro ao gerar', description: e?.message || 'Erro desconhecido', variant: 'destructive' });
+      const msg = e?.message || 'Erro desconhecido';
+      const is429 = /429|quota|rate limit/i.test(msg);
+      toast({
+        title: 'Erro ao gerar',
+        description: is429
+          ? 'Limite de uso da API Google (429) atingido. Aguarde alguns minutos ou verifique seu plano e uso em https://ai.google.dev/gemini-api/docs/rate-limits'
+          : msg,
+        variant: 'destructive',
+      });
     } finally {
+      generatingRef.current = false;
       setIsGenerating(false);
     }
   };
 
   const handleRefine = async (payload) => {
+    if (refiningRef.current) return;
     if (!selectedProject || !selectedImage?.id) {
       toast({ title: 'Selecione uma imagem para refinar', variant: 'destructive' });
       return;
@@ -179,6 +197,7 @@ const NeuroDesignPage = () => {
     const region = typeof payload === 'object' && payload !== null ? payload.region : undefined;
     const regionCropImageUrl = typeof payload === 'object' && payload !== null ? payload.regionCropImageUrl : undefined;
 
+    refiningRef.current = true;
     setIsRefining(true);
     try {
       const body = {
@@ -194,10 +213,14 @@ const NeuroDesignPage = () => {
       if (region) body.region = region;
       if (regionCropImageUrl) body.regionCropImageUrl = regionCropImageUrl;
 
-      const { data, error } = await supabase.functions.invoke('neurodesign-refine', {
+      const refineConn = imageConnections.find((c) => c.id === currentConfig?.user_ai_connection_id);
+      const isGoogleRefine = refineConn?.provider?.toLowerCase() === 'google';
+      const refineFnName = isGoogleRefine ? 'neurodesign-refine-google' : 'neurodesign-refine';
+      const { data, error } = await supabase.functions.invoke(refineFnName, {
         body,
       });
-      if (error) throw new Error(error.message);
+      const refineErrMsg = data?.error || error?.message;
+      if (error) throw new Error(refineErrMsg || 'Falha ao chamar o servidor de refino.');
       if (data?.error) throw new Error(data.error);
       if (data?.images?.length) {
         await fetchImages(selectedProject.id);
@@ -207,8 +230,17 @@ const NeuroDesignPage = () => {
         toast({ title: 'Imagem refinada com sucesso!' });
       }
     } catch (e) {
-      toast({ title: 'Erro ao refinar', description: e.message, variant: 'destructive' });
+      const msg = e?.message || 'Erro desconhecido';
+      const is429 = /429|quota|rate limit/i.test(msg);
+      toast({
+        title: 'Erro ao refinar',
+        description: is429
+          ? 'Limite de uso da API Google (429) atingido. Aguarde alguns minutos ou verifique seu plano em https://ai.google.dev/gemini-api/docs/rate-limits'
+          : msg,
+        variant: 'destructive',
+      });
     } finally {
+      refiningRef.current = false;
       setIsRefining(false);
     }
   };

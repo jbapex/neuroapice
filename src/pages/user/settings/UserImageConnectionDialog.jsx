@@ -16,7 +16,9 @@ const UserImageConnectionDialog = ({ isOpen, setIsOpen, editingConnection, onFin
   const { user } = useAuth();
   const [showApiKey, setShowApiKey] = useState(false);
   const [openRouterImageModels, setOpenRouterImageModels] = useState([]);
+  const [googleImageModels, setGoogleImageModels] = useState([]);
   const [isLoadingImageModels, setIsLoadingImageModels] = useState(false);
+  const [isLoadingGoogleModels, setIsLoadingGoogleModels] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     provider: 'Google',
@@ -58,6 +60,35 @@ const UserImageConnectionDialog = ({ isOpen, setIsOpen, editingConnection, onFin
     }
   }, []);
 
+  const fetchGoogleImageModels = useCallback(async (apiKey) => {
+    if (!apiKey) return;
+    setIsLoadingGoogleModels(true);
+    setGoogleImageModels([]);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-google-models', {
+        body: { apiKey },
+      });
+      if (error) throw new Error(error?.message || error);
+      const list = data?.models ?? (Array.isArray(data) ? data : []);
+      const raw = Array.isArray(list) ? list : [];
+      const imageModels = raw.filter((m) => {
+        const name = (m?.name ?? m?.baseModelId ?? '').toLowerCase();
+        return name.includes('image') || name.includes('imagen');
+      });
+      const sorted = imageModels.slice().sort((a, b) => {
+        const na = (a?.displayName || a?.name || a?.baseModelId || '').toLowerCase();
+        const nb = (b?.displayName || b?.name || b?.baseModelId || '').toLowerCase();
+        return na.localeCompare(nb);
+      });
+      setGoogleImageModels(sorted);
+    } catch (err) {
+      toast.error('Falha ao buscar modelos de imagem', { description: 'Verifique a chave da API Google e tente novamente.' });
+      setGoogleImageModels([]);
+    } finally {
+      setIsLoadingGoogleModels(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (formData.provider === 'OpenRouter' && debouncedApiKey) {
       fetchOpenRouterImageModels(debouncedApiKey);
@@ -65,6 +96,14 @@ const UserImageConnectionDialog = ({ isOpen, setIsOpen, editingConnection, onFin
       setOpenRouterImageModels([]);
     }
   }, [formData.provider, debouncedApiKey, fetchOpenRouterImageModels]);
+
+  useEffect(() => {
+    if (formData.provider === 'Google' && debouncedApiKey) {
+      fetchGoogleImageModels(debouncedApiKey);
+    } else {
+      setGoogleImageModels([]);
+    }
+  }, [formData.provider, debouncedApiKey, fetchGoogleImageModels]);
 
   useEffect(() => {
     if (isOpen) {
@@ -108,6 +147,10 @@ const UserImageConnectionDialog = ({ isOpen, setIsOpen, editingConnection, onFin
     }
     if (formData.provider === 'OpenRouter' && !formData.default_model) {
       toast.error("Selecione um modelo", { description: "Escolha um modelo de geração de imagem do OpenRouter." });
+      return;
+    }
+    if (formData.provider === 'Google' && !formData.default_model) {
+      toast.error("Selecione um modelo", { description: "Escolha um modelo de geração de imagem do Google." });
       return;
     }
 
@@ -161,35 +204,72 @@ const UserImageConnectionDialog = ({ isOpen, setIsOpen, editingConnection, onFin
               </SelectContent>
             </Select>
           </div>
-          {formData.provider === 'OpenRouter' && (
+          {(formData.provider === 'Google' || formData.provider === 'OpenRouter') && (
             <div>
               <Label htmlFor="conn-default_model">Modelo de geração de imagem</Label>
-              <Select
-                value={formData.default_model || ''}
-                onValueChange={(value) => setFormData({ ...formData, default_model: value })}
-                disabled={isLoadingImageModels}
-              >
-                <SelectTrigger id="conn-default_model" className="w-full glass-input">
-                  {isLoadingImageModels ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Carregando modelos...
-                    </span>
-                  ) : openRouterImageModels.length === 0 ? (
-                    <SelectValue placeholder="Informe a chave da API acima para carregar os modelos" />
-                  ) : (
-                    <SelectValue placeholder="Selecione um modelo de geração de imagem" />
-                  )}
-                </SelectTrigger>
-                <SelectContent className="bg-gray-800 text-white border-white/20 max-h-60">
-                  {openRouterImageModels.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.name || model.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-2">Lista apenas modelos com suporte a geração de imagem no OpenRouter.</p>
+              {formData.provider === 'OpenRouter' ? (
+                <Select
+                  value={formData.default_model || ''}
+                  onValueChange={(value) => setFormData({ ...formData, default_model: value })}
+                  disabled={isLoadingImageModels}
+                >
+                  <SelectTrigger id="conn-default_model" className="w-full glass-input">
+                    {isLoadingImageModels ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Carregando modelos...
+                      </span>
+                    ) : openRouterImageModels.length === 0 ? (
+                      <SelectValue placeholder="Informe a chave da API acima para carregar os modelos" />
+                    ) : (
+                      <SelectValue placeholder="Selecione um modelo de geração de imagem" />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 text-white border-white/20 max-h-60">
+                    {openRouterImageModels.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name || model.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select
+                  value={formData.default_model || ''}
+                  onValueChange={(value) => setFormData({ ...formData, default_model: value })}
+                  disabled={isLoadingGoogleModels}
+                >
+                  <SelectTrigger id="conn-default_model" className="w-full glass-input">
+                    {isLoadingGoogleModels ? (
+                      <span className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Carregando modelos...
+                      </span>
+                    ) : googleImageModels.length === 0 ? (
+                      <SelectValue placeholder="Informe a chave da API acima para carregar os modelos" />
+                    ) : (
+                      <SelectValue placeholder="Selecione um modelo de geração de imagem" />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 text-white border-white/20 max-h-60">
+                    {googleImageModels.map((model) => {
+                      const name = model?.name ?? '';
+                      const value = name.replace(/^models\//, '');
+                      const label = model?.displayName || name || model?.baseModelId || value;
+                      return (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              )}
+              <p className="text-xs text-muted-foreground mt-2">
+                {formData.provider === 'OpenRouter'
+                  ? 'Lista apenas modelos com suporte a geração de imagem no OpenRouter.'
+                  : 'Lista apenas modelos com suporte a geração de imagem no Google (Gemini/Imagen).'}
+              </p>
             </div>
           )}
           <div>
