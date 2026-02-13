@@ -1,13 +1,18 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Loader2, Download, Sparkles, Upload, X, Crop } from 'lucide-react';
+import { Loader2, Download, Sparkles, Upload, X, Crop, Maximize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog';
 import { uploadNeuroDesignFile } from '@/lib/neurodesignStorage';
+import { cn } from '@/lib/utils';
 
 const isDemoPlaceholder = (url) => url && typeof url === 'string' && url.includes('placehold.co');
 
-const PreviewPanel = ({ project, user, selectedImage, images, isGenerating, isRefining, onRefine, onDownload }) => {
+const PreviewPanel = ({ project, user, selectedImage, images, isGenerating, isRefining, onRefine, onDownload, onSelectImage }) => {
   const { toast } = useToast();
   const [refineInstruction, setRefineInstruction] = useState('');
   const [referenceArtFile, setReferenceArtFile] = useState(null);
@@ -21,6 +26,7 @@ const PreviewPanel = ({ project, user, selectedImage, images, isGenerating, isRe
   const [drawCurrent, setDrawCurrent] = useState(null);
   const previewContainerRef = useRef(null);
   const previewImgRef = useRef(null);
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
 
   const imageUrl = selectedImage?.url || selectedImage?.thumbnail_url;
   const isLoading = isGenerating || isRefining;
@@ -225,7 +231,7 @@ const PreviewPanel = ({ project, user, selectedImage, images, isGenerating, isRe
   };
 
   return (
-    <div className="flex flex-col h-full p-6">
+    <div className="flex flex-col h-full p-4 sm:p-6 min-h-0 max-w-[900px] xl:max-w-[1000px] mx-auto w-full">
       <div className="flex-1 min-h-0 rounded-lg border border-white/10 bg-black/20 flex items-center justify-center overflow-hidden">
         {isLoading && (
           <div className="flex flex-col items-center gap-4 text-muted-foreground">
@@ -267,6 +273,9 @@ const PreviewPanel = ({ project, user, selectedImage, images, isGenerating, isRe
               </div>
             )}
             <div className="absolute top-4 right-4 flex gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setFullscreenOpen(true)}>
+                <Maximize2 className="h-4 w-4 mr-1" /> Tela cheia
+              </Button>
               <Button size="sm" variant="secondary" onClick={() => onDownload?.(imageUrl)}>
                 <Download className="h-4 w-4 mr-1" /> Download
               </Button>
@@ -281,69 +290,138 @@ const PreviewPanel = ({ project, user, selectedImage, images, isGenerating, isRe
         )}
       </div>
 
-      {!isLoading && imageUrl && (
-        <>
-          <div className="mt-4 space-y-3">
-            <p className="text-xs text-muted-foreground font-medium">Opções avançadas (opcional)</p>
-            <div className="flex flex-wrap gap-4">
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">Referência de arte</label>
-                <div className="flex items-center gap-2">
-                  {referenceArtPreviewUrl ? (
-                    <div className="relative">
-                      <img src={referenceArtPreviewUrl} alt="Ref arte" className="w-14 h-14 rounded object-cover border border-white/20" />
-                      <button type="button" onClick={clearReferenceArt} className="absolute -top-1 -right-1 bg-black/70 rounded-full p-0.5">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="w-14 h-14 rounded border border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:bg-white/5 shrink-0">
-                      <Upload className="h-4 w-4" />
-                      <input type="file" accept="image/*" className="hidden" onChange={handleReferenceArtChange} />
-                    </label>
-                  )}
-                  <span className="text-xs text-muted-foreground">Crie semelhante a essa arte</span>
+      {/* Área rolável: opções de refino + lista de criações */}
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+        {!isLoading && imageUrl && (
+          <>
+            <div className="mt-4 space-y-3">
+              <p className="text-xs text-muted-foreground font-medium">Opções avançadas (opcional)</p>
+              <div className="flex flex-wrap gap-4">
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Referência de arte</label>
+                  <div className="flex items-center gap-2">
+                    {referenceArtPreviewUrl ? (
+                      <div className="relative">
+                        <img src={referenceArtPreviewUrl} alt="Ref arte" className="w-14 h-14 rounded object-cover border border-white/20" />
+                        <button type="button" onClick={clearReferenceArt} className="absolute -top-1 -right-1 bg-black/70 rounded-full p-0.5">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="w-14 h-14 rounded border border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:bg-white/5 shrink-0">
+                        <Upload className="h-4 w-4" />
+                        <input type="file" accept="image/*" className="hidden" onChange={handleReferenceArtChange} />
+                      </label>
+                    )}
+                    <span className="text-xs text-muted-foreground">Crie semelhante a essa arte</span>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground block mb-1">Imagem para substituir</label>
-                <div className="flex items-center gap-2">
-                  {replacementPreviewUrl ? (
-                    <div className="relative">
-                      <img src={replacementPreviewUrl} alt="Substituir" className="w-14 h-14 rounded object-cover border border-white/20" />
-                      <button type="button" onClick={clearReplacement} className="absolute -top-1 -right-1 bg-black/70 rounded-full p-0.5">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="w-14 h-14 rounded border border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:bg-white/5 shrink-0">
-                      <Upload className="h-4 w-4" />
-                      <input type="file" accept="image/*" className="hidden" onChange={handleReplacementChange} />
-                    </label>
-                  )}
-                  <span className="text-xs text-muted-foreground">Substitua elemento (use seleção ou instrução)</span>
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Imagem para substituir</label>
+                  <div className="flex items-center gap-2">
+                    {replacementPreviewUrl ? (
+                      <div className="relative">
+                        <img src={replacementPreviewUrl} alt="Substituir" className="w-14 h-14 rounded object-cover border border-white/20" />
+                        <button type="button" onClick={clearReplacement} className="absolute -top-1 -right-1 bg-black/70 rounded-full p-0.5">
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="w-14 h-14 rounded border border-dashed border-white/30 flex items-center justify-center cursor-pointer hover:bg-white/5 shrink-0">
+                        <Upload className="h-4 w-4" />
+                        <input type="file" accept="image/*" className="hidden" onChange={handleReplacementChange} />
+                      </label>
+                    )}
+                    <span className="text-xs text-muted-foreground">Substitua elemento (use seleção ou instrução)</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="mt-4 flex gap-2">
-            <Textarea
-              placeholder="Instrução de ajuste (ex: deixe o fundo mais escuro, substitua a camiseta pela imagem anexa)"
-              value={refineInstruction}
-              onChange={(e) => setRefineInstruction(e.target.value)}
-              className="flex-1 min-h-[60px] bg-white/5 border-white/20 text-white resize-none"
-            />
-            <Button
-              onClick={handleRefineClick}
-              disabled={!refineInstruction.trim() || isUploadingRefine}
-            >
-              {isUploadingRefine ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />}
-              Refinar
-            </Button>
+            <div className="mt-4 flex flex-col sm:flex-row gap-2">
+              <Textarea
+                placeholder="Instrução de ajuste (ex: deixe o fundo mais escuro, substitua a camiseta pela imagem anexa)"
+                value={refineInstruction}
+                onChange={(e) => setRefineInstruction(e.target.value)}
+                className="flex-1 min-h-[60px] bg-white/5 border-white/20 text-white resize-none min-w-0"
+              />
+              <Button
+                onClick={handleRefineClick}
+                disabled={!refineInstruction.trim() || isUploadingRefine}
+                className="shrink-0"
+              >
+                {isUploadingRefine ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Sparkles className="h-4 w-4 mr-1" />}
+                Refinar
+              </Button>
+            </div>
+          </>
+        )}
+
+        {/* Criações deste projeto: grid que desce para baixo, sem ultrapassar a largura da tela */}
+        {images.length > 0 && (
+          <div className="mt-6 pt-4 border-t border-white/10 min-w-0">
+            <p className="text-xs text-muted-foreground font-medium mb-3">Criações deste projeto</p>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+              {images.map((img) => {
+                const url = img.url || img.thumbnail_url;
+                const isSelected = selectedImage?.id === img.id;
+                return (
+                  <div
+                    key={img.id}
+                    className={cn(
+                      'aspect-square rounded-lg overflow-hidden border-2 transition-all bg-white/5',
+                      isSelected ? 'border-primary ring-2 ring-primary/30' : 'border-white/10 hover:border-white/30'
+                    )}
+                  >
+                    <button
+                      type="button"
+                      className="relative block w-full h-full focus:outline-none focus:ring-0"
+                      onClick={() => onSelectImage?.(img)}
+                    >
+                      <img src={url} alt="" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity bg-black/40 flex items-center justify-center">
+                        <Button
+                          size="icon"
+                          variant="secondary"
+                          className="h-8 w-8"
+                          onClick={(e) => { e.stopPropagation(); onDownload?.(url); }}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </>
-      )}
+        )}
+      </div>
+
+      {/* Modal tela cheia para a arte gerada */}
+      <Dialog open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
+        <DialogContent
+          className="max-w-[95vw] max-h-[95vh] w-auto h-auto p-0 gap-0 border-0 bg-black/95 overflow-hidden [&>button]:hidden"
+          onPointerDownOutside={() => setFullscreenOpen(false)}
+          onEscapeKeyDown={() => setFullscreenOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setFullscreenOpen(false)}
+            className="absolute top-4 right-4 z-50 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 transition-colors"
+            aria-label="Fechar tela cheia"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              alt="Arte em tela cheia"
+              className="max-w-[95vw] max-h-[95vh] w-auto h-auto object-contain"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

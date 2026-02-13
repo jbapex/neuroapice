@@ -56,13 +56,16 @@ import React from 'react';
     import UserAiSettings from '@/pages/user/settings/UserAiSettings';
     
     const App = () => {
-      const { user, profile, loading } = useAuth();
+      const { user, profile, loading, profileLoading } = useAuth();
       const location = useLocation();
     
-      if (loading && location.pathname !== '/auth' && !location.pathname.startsWith('/public')) {
+      const isAuthRoute = location.pathname === '/auth';
+      const isPublicRoute = location.pathname.startsWith('/politica') || location.pathname.startsWith('/exclusao') || location.pathname.startsWith('/integrations') || location.pathname.startsWith('/site-preview');
+    
+      if (loading && !isAuthRoute && !isPublicRoute) {
         return (
           <div className="flex items-center justify-center h-screen bg-background">
-            <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
         );
       }
@@ -75,15 +78,26 @@ import React from 'react';
       
       const homeRedirectPath = getHomeRedirect();
     
-      const isAuthRoute = location.pathname === '/auth';
-      const isPublicRoute = location.pathname.startsWith('/politica') || location.pathname.startsWith('/exclusao') || location.pathname.startsWith('/integrations') || location.pathname.startsWith('/site-preview');
-    
       if (user && profile && isAuthRoute) {
         return <Navigate to={homeRedirectPath} replace />;
       }
     
       if (!user && !isAuthRoute && !isPublicRoute) {
         return <Navigate to="/auth" state={{ from: location }} replace />;
+      }
+    
+      if (user && !profile && profileLoading) {
+        return (
+          <div className="min-h-screen bg-background flex flex-col">
+            <header className="h-14 border-b flex items-center px-4 shrink-0" />
+            <main className="flex-1 flex items-center justify-center p-4">
+              <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm">Carregando seu perfil...</p>
+              </div>
+            </main>
+          </div>
+        );
       }
     
       return (

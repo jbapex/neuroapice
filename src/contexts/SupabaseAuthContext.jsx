@@ -12,13 +12,13 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   const fetchProfile = useCallback(async (userId) => {
     if (!userId) {
       setProfile(null);
       return;
     }
-
     const { data, error } = await supabase.rpc('get_or_create_profile');
 
     if (error) {
@@ -63,33 +63,53 @@ export const AuthProvider = ({ children }) => {
     setProfile(profileData);
   }, [toast]);
 
-  const handleSession = useCallback(async (session) => {
+  const handleSession = useCallback((session) => {
     setSession(session);
     const currentUser = session?.user ?? null;
     setUser(currentUser);
-    await fetchProfile(currentUser?.id);
     setLoading(false);
+    if (!currentUser) {
+      setProfile(null);
+      setProfileLoading(false);
+      return;
+    }
+    setProfileLoading(true);
+    fetchProfile(currentUser.id)
+      .then(() => setProfileLoading(false))
+      .catch(() => setProfileLoading(false));
   }, [fetchProfile]);
 
   useEffect(() => {
+    const SESSION_TIMEOUT_MS = 4000;
+    const timeoutId = setTimeout(() => setLoading(false), SESSION_TIMEOUT_MS);
+
     const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      await handleSession(session);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        clearTimeout(timeoutId);
+        handleSession(session);
+      } catch (e) {
+        clearTimeout(timeoutId);
+        setLoading(false);
+      }
     };
 
     getSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        // On SIGNED_OUT, clear profile before user is set to null
+      (event, session) => {
         if (event === 'SIGNED_OUT') {
           setProfile(null);
+          setProfileLoading(false);
         }
-        await handleSession(session);
+        handleSession(session);
       }
     );
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeoutId);
+      subscription.unsubscribe();
+    };
   }, [handleSession]);
 
   const signUp = useCallback(async (email, password, options) => {
@@ -180,11 +200,12 @@ export const AuthProvider = ({ children }) => {
     session,
     profile,
     loading,
+    profileLoading,
     signUp,
     signIn,
     signOut,
     hasPermission,
-  }), [user, session, profile, loading, signUp, signIn, signOut, hasPermission]);
+  }), [user, session, profile, loading, profileLoading, signUp, signIn, signOut, hasPermission]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

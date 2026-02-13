@@ -93,4 +93,23 @@
   .container-responsive {
     @apply w-full max-w-full px-4 sm:px-6 lg:px-8;
   }
+
+  /* Scroll horizontal visível para listas de thumbnails (ex.: Criações deste projeto) */
+  .scrollbar-horizontal {
+    scrollbar-gutter: stable;
+  }
+  .scrollbar-horizontal::-webkit-scrollbar {
+    height: 8px;
+  }
+  .scrollbar-horizontal::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 4px;
+  }
+  .scrollbar-horizontal::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.4);
+    border-radius: 4px;
+  }
+  .scrollbar-horizontal::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.6);
+  }
 }

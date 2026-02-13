@@ -24,7 +24,18 @@ const NeuroDesignSidebar = ({
   selectedProject,
   setSelectedProject,
   onRefreshProjects,
+  onCloseDrawer,
+  wrapperClassName,
 }) => {
+  const handleSetView = (v) => {
+    setView(v);
+    onCloseDrawer?.();
+  };
+  const handleSelectProject = (p) => {
+    setSelectedProject(p);
+    setView('create');
+    onCloseDrawer?.();
+  };
   const { user } = useAuth();
   const { toast } = useToast();
   const [newProjectName, setNewProjectName] = useState('');
@@ -68,6 +79,7 @@ const NeuroDesignSidebar = ({
       onRefreshProjects();
       setSelectedProject(data);
       setView('create');
+      onCloseDrawer?.();
       toast({ title: 'Projeto criado!' });
     } catch (e) {
       toast({ title: 'Erro ao criar projeto', description: e.message, variant: 'destructive' });
@@ -76,8 +88,9 @@ const NeuroDesignSidebar = ({
     }
   };
 
+  const asideClass = wrapperClassName ?? 'w-64 shrink-0 border-r border-white/10 bg-black/20 flex flex-col';
   return (
-    <aside className="w-64 shrink-0 border-r border-white/10 bg-black/20 flex flex-col">
+    <aside className={asideClass}>
       <div className="p-4 border-b border-white/10">
         <h2 className="font-semibold text-lg text-white">NeuroDesign</h2>
         <p className="text-xs text-muted-foreground mt-1">Design Builder</p>
@@ -85,7 +98,7 @@ const NeuroDesignSidebar = ({
       <nav className="p-2 space-y-1">
         <button
           type="button"
-          onClick={() => setView('explore')}
+          onClick={() => handleSetView('explore')}
           className={cn(
             'w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
             view === 'explore' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-white/5'
@@ -96,7 +109,7 @@ const NeuroDesignSidebar = ({
         </button>
         <button
           type="button"
-          onClick={() => setView('create')}
+          onClick={() => handleSetView('create')}
           className={cn(
             'w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
             view === 'create' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-white/5'
@@ -107,7 +120,7 @@ const NeuroDesignSidebar = ({
         </button>
         <button
           type="button"
-          onClick={() => setView('gallery')}
+          onClick={() => handleSetView('gallery')}
           className={cn(
             'w-full flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors',
             view === 'gallery' ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-white/5'
@@ -134,20 +147,18 @@ const NeuroDesignSidebar = ({
           <Plus className="h-4 w-4" />
         </Button>
       </div>
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 overflow-y-auto p-2 min-w-0">
         <p className="text-xs text-muted-foreground px-2 mb-2">Projetos</p>
         {projects.length === 0 ? (
           <p className="text-xs text-muted-foreground px-2">Nenhum projeto ainda.</p>
         ) : (
-          <ul className="space-y-1">
+          <ul className="space-y-1 min-w-0">
             {projects.map((p) => (
-              <li key={p.id} className="group flex items-center gap-1 rounded-lg overflow-hidden">
+              <li key={p.id} className="group flex items-center gap-1 rounded-lg overflow-hidden min-w-0">
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedProject(p);
-                    setView('create');
-                  }}
+                  onClick={() => handleSelectProject(p)}
+                  title={p.name}
                   className={cn(
                     'flex-1 min-w-0 text-left rounded-lg px-3 py-2 text-sm truncate transition-colors',
                     selectedProject?.id === p.id ? 'bg-primary/20 text-primary' : 'hover:bg-white/5 text-muted-foreground'

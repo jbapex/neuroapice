@@ -3,6 +3,13 @@ import { Helmet } from 'react-helmet';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
+import { useMediaQuery } from '@/hooks/use-media-query';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+} from '@/components/ui/dialog';
+import { FolderOpen, PanelLeft } from 'lucide-react';
 import NeuroDesignSidebar from '@/components/neurodesign/NeuroDesignSidebar';
 import BuilderPanel from '@/components/neurodesign/BuilderPanel';
 import PreviewPanel from '@/components/neurodesign/PreviewPanel';
@@ -27,6 +34,9 @@ const NeuroDesignPage = () => {
   const [llmConnections, setLlmConnections] = useState([]);
   const [selectedLlmId, setSelectedLlmId] = useState(null);
   const [isFillingFromPrompt, setIsFillingFromPrompt] = useState(false);
+  const isLg = useMediaQuery('(min-width: 1024px)');
+  const [sidebarDrawerOpen, setSidebarDrawerOpen] = useState(false);
+  const [builderDrawerOpen, setBuilderDrawerOpen] = useState(false);
 
   const fetchProjects = useCallback(async () => {
     if (!user) return;
@@ -358,6 +368,13 @@ Regras:
     }
   };
 
+  const downloadHandler = (url) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `neurodesign-${Date.now()}.png`;
+    a.click();
+  };
+
   return (
     <>
       <Helmet>
@@ -365,31 +382,59 @@ Regras:
         <meta name="description" content="Design Builder premium: crie imagens com controle total de composição." />
       </Helmet>
       <NeuroDesignErrorBoundary>
-      <div className="flex h-[calc(100vh-4rem)] min-h-[400px] bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900 text-white overflow-hidden">
-        <NeuroDesignSidebar
-          view={view}
-          setView={setView}
-          projects={projects}
-          selectedProject={selectedProject}
-          setSelectedProject={setSelectedProject}
-          onRefreshProjects={fetchProjects}
-        />
-        <main className="flex-1 flex overflow-hidden">
+      <div className="flex h-[calc(100vh-4rem)] min-h-[400px] bg-gradient-to-br from-gray-900 via-purple-900/20 to-gray-900 text-white overflow-hidden min-w-0">
+        {isLg && (
+          <NeuroDesignSidebar
+            view={view}
+            setView={setView}
+            projects={projects}
+            selectedProject={selectedProject}
+            setSelectedProject={setSelectedProject}
+            onRefreshProjects={fetchProjects}
+          />
+        )}
+        <main className="flex-1 flex flex-col min-w-0 overflow-hidden min-h-0">
+          {!isLg && (
+            <div className="flex items-center gap-2 p-2 border-b border-white/10 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-white/20 text-white hover:bg-white/10"
+                onClick={() => setSidebarDrawerOpen(true)}
+              >
+                <FolderOpen className="h-4 w-4 mr-1" />
+                Projetos
+              </Button>
+              {view === 'create' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-white/20 text-white hover:bg-white/10"
+                  onClick={() => setBuilderDrawerOpen(true)}
+                >
+                  <PanelLeft className="h-4 w-4 mr-1" />
+                  Configurações
+                </Button>
+              )}
+            </div>
+          )}
           {view === 'create' && (
-            <div className="flex flex-1 min-w-0">
-              <div className="w-[400px] shrink-0 overflow-y-auto border-r border-white/10">
-                <BuilderPanel
-                  project={selectedProject}
-                  config={currentConfig}
-                  setConfig={setCurrentConfig}
-                  imageConnections={imageConnections}
-                  onGenerate={handleGenerate}
-                  isGenerating={isGenerating}
-                  onFillFromPrompt={handleFillFromPrompt}
-                  hasLlmConnection={llmConnections.length > 0}
-                  isFillingFromPrompt={isFillingFromPrompt}
-                />
-              </div>
+            <div className="flex flex-1 min-w-0 min-h-0">
+              {isLg && (
+                <div className="w-[420px] xl:w-[480px] shrink-0 overflow-y-auto border-r border-white/10 min-h-0">
+                  <BuilderPanel
+                    project={selectedProject}
+                    config={currentConfig}
+                    setConfig={setCurrentConfig}
+                    imageConnections={imageConnections}
+                    onGenerate={handleGenerate}
+                    isGenerating={isGenerating}
+                    onFillFromPrompt={handleFillFromPrompt}
+                    hasLlmConnection={llmConnections.length > 0}
+                    isFillingFromPrompt={isFillingFromPrompt}
+                  />
+                </div>
+              )}
               <div className="flex-1 min-w-0 flex flex-col">
                 <PreviewPanel
                   project={selectedProject}
@@ -399,39 +444,77 @@ Regras:
                   isGenerating={isGenerating}
                   isRefining={isRefining}
                   onRefine={handleRefine}
-                  onDownload={(url) => {
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `neurodesign-${Date.now()}.png`;
-                    a.click();
-                  }}
+                  onDownload={downloadHandler}
+                  onSelectImage={setSelectedImage}
                 />
               </div>
             </div>
           )}
           {view === 'gallery' && (
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0">
               <MasonryGallery
                 images={images}
                 projectId={selectedProject?.id}
                 selectedIds={selectedImage ? [selectedImage.id] : []}
                 onSelectImage={setSelectedImage}
-                onDownload={(url) => {
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `neurodesign-${Date.now()}.png`;
-                  a.click();
-                }}
+                onDownload={downloadHandler}
               />
             </div>
           )}
           {view === 'explore' && (
-            <div className="flex-1 overflow-y-auto p-6 flex items-center justify-center text-muted-foreground">
-              <p>Selecione um projeto na barra lateral ou crie um novo e use &quot;Criar&quot; para começar.</p>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex items-center justify-center text-muted-foreground min-h-0">
+              <p className="text-center">Selecione um projeto na barra lateral ou crie um novo e use &quot;Criar&quot; para começar.</p>
             </div>
           )}
         </main>
       </div>
+
+      {/* Drawer Projetos (mobile/tablet) */}
+      <Dialog open={sidebarDrawerOpen} onOpenChange={setSidebarDrawerOpen}>
+        <DialogContent
+          className="fixed left-0 top-0 h-full w-72 max-w-[85vw] translate-x-0 translate-y-0 rounded-none border-r p-0 gap-0 flex flex-col bg-gray-900 border-white/10 data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left"
+          onPointerDownOutside={(e) => e.preventDefault()}
+        >
+          <NeuroDesignSidebar
+            view={view}
+            setView={setView}
+            projects={projects}
+            selectedProject={selectedProject}
+            setSelectedProject={setSelectedProject}
+            onRefreshProjects={fetchProjects}
+            onCloseDrawer={() => setSidebarDrawerOpen(false)}
+            wrapperClassName="w-full h-full border-0 bg-transparent flex flex-col"
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Drawer Configurações (mobile/tablet) */}
+      <Dialog open={builderDrawerOpen} onOpenChange={setBuilderDrawerOpen}>
+        <DialogContent
+          className="fixed left-0 top-0 h-full w-full max-w-md translate-x-0 translate-y-0 rounded-none border-r p-0 gap-0 grid-rows-auto bg-gray-900 border-white/10 data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left overflow-hidden flex flex-col"
+          onPointerDownOutside={(e) => e.preventDefault()}
+        >
+          <div className="p-4 border-b border-white/10 shrink-0">
+            <h3 className="font-semibold text-white">Configurações de geração</h3>
+          </div>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <BuilderPanel
+              project={selectedProject}
+              config={currentConfig}
+              setConfig={setCurrentConfig}
+              imageConnections={imageConnections}
+              onGenerate={(config) => {
+                handleGenerate(config);
+                setBuilderDrawerOpen(false);
+              }}
+              isGenerating={isGenerating}
+              onFillFromPrompt={handleFillFromPrompt}
+              hasLlmConnection={llmConnections.length > 0}
+              isFillingFromPrompt={isFillingFromPrompt}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
       </NeuroDesignErrorBoundary>
     </>
   );

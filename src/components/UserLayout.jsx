@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Settings, Menu, Target, Users, BarChart, SlidersHorizontal, GitFork, Lock } from 'lucide-react';
@@ -93,6 +93,16 @@ const UserLayout = () => {
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const location = useLocation();
   const isToolsSection = location.pathname.startsWith('/ferramentas');
+  const isNeuroDesignPage = location.pathname === '/ferramentas/neurodesign';
+
+  // No NeuroDesign, recolher o menu principal para caber tudo em uma tela (só fica o menu do NeuroDesign)
+  useEffect(() => {
+    if (isNeuroDesignPage && isDesktop) {
+      setIsSidebarCollapsed(true);
+    } else if (!isNeuroDesignPage) {
+      setIsSidebarCollapsed(false);
+    }
+  }, [isNeuroDesignPage, isDesktop]);
   const pageTitleData = {
     '/campanhas': 'Campanhas',
     '/clientes': 'Clientes',
@@ -202,7 +212,7 @@ const UserLayout = () => {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="w-full flex-1 min-w-0">
-            <h1 className="text-lg sm:text-xl font-semibold truncate md:block">{pageTitle}</h1>
+            <h1 className="text-lg sm:text-xl font-semibold truncate md:block" title={pageTitle}>{pageTitle}</h1>
           </div>
           <ThemeToggle />
         </header>

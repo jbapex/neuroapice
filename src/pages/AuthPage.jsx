@@ -25,18 +25,24 @@ const AuthPage = () => {
     e.preventDefault();
     setLoading(true);
 
+    const LOGIN_TIMEOUT_MS = 15000;
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Login está demorando. Verifique sua conexão com a internet e tente novamente.')), LOGIN_TIMEOUT_MS)
+    );
+
     try {
       if (isLogin) {
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const signInPromise = supabase.auth.signInWithPassword({
           email: formData.email,
           password: formData.password,
         });
+        const { data, error } = await Promise.race([signInPromise, timeoutPromise]);
         if (error) throw error;
-        
-        toast({ title: "Login realizado com sucesso!", description: "Bem-vindo de volta!" });
-
+        if (data?.session) {
+          toast({ title: "Login realizado com sucesso!", description: "Bem-vindo de volta!" });
+        }
       } else {
-        const { data, error } = await supabase.auth.signUp({
+        const signUpPromise = supabase.auth.signUp({
           email: formData.email,
           password: formData.password,
           options: {
@@ -46,16 +52,18 @@ const AuthPage = () => {
             },
           },
         });
+        const { data, error } = await Promise.race([signUpPromise, timeoutPromise]);
         if (error) throw error;
-        if (data.user) {
-            toast({ title: "Cadastro realizado!", description: "Verifique seu e-mail para confirmação." });
-            setIsLogin(true);
+        if (data?.user) {
+          toast({ title: "Cadastro realizado!", description: "Verifique seu e-mail para confirmação." });
+          setIsLogin(true);
         }
       }
     } catch (error) {
+      const message = error?.message || 'Ocorreu um erro. Verifique suas credenciais e tente novamente.';
       toast({
         title: "Erro de Autenticação",
-        description: error.message || 'Ocorreu um erro. Verifique suas credenciais e tente novamente.',
+        description: message,
         variant: "destructive",
       });
     } finally {
